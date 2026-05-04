@@ -54,6 +54,9 @@ class DashboardViewModel @Inject constructor(
     private val _stationDepartures = MutableStateFlow<Map<String, List<SmartDeparture>>>(emptyMap())
     val stationDepartures: StateFlow<Map<String, List<SmartDeparture>>> = _stationDepartures.asStateFlow()
 
+    private val _loadingStations = MutableStateFlow<Set<String>>(emptySet())
+    val loadingStations: StateFlow<Set<String>> = _loadingStations.asStateFlow()
+
     init {
         viewModelScope.launch {
             // Step 1: Load cached location FIRST — before anything else runs
@@ -144,20 +147,10 @@ class DashboardViewModel @Inject constructor(
                     dLat * dLat + dLng * dLng
                 }
 
-                selectStationsByName(sortedStations, prefs.maxStations).forEach { station ->
-                    try {
-                        val deps = getSmartDepartures.execute(station.id, loc.latitude, loc.longitude, prefs)
-                        val tramDeps = deps.take(5)
-                        val currentMap = _stationDepartures.value.toMutableMap()
-                        if (tramDeps.isNotEmpty()) {
-                            currentMap[station.id] = tramDeps
-                        } else {
-                            currentMap.remove(station.id)
-                        }
-                        _stationDepartures.value = currentMap
-                    } catch (e: Exception) {
-                        // Silently fail per station
-                    }
+                // Only preload the first X groups (maxStations)
+                val groupsToLoad = selectStationsByName(sortedStations, prefs.maxStations)
+                groupsToLoad.forEach { station ->
+                    refreshStation(station.id)
                     kotlinx.coroutines.delay(100)
                 }
             }
@@ -259,6 +252,31 @@ class DashboardViewModel @Inject constructor(
             android.os.Looper.getMainLooper()
         )
         _isManualLocation.value = false
+    }
+
+    fun refreshStation(stationId: String) {
+        viewModelScope.launch {
+            if (_loadingStations.value.contains(stationId)) return@launch
+            _loadingStations.value += stationId
+            try {
+                val loc = currentLocation.value
+                val prefs = preferencesManager.userPreferences.first()
+                val deps = getSmartDepartures.execute(stationId, loc.latitude, loc.longitude, prefs)
+                val currentMap = _stationDepartures.value.toMutableMap()
+                if (deps.isNotEmpty()) {
+                    currentMap[stationId] = deps.take(5)
+                }
+                _stationDepartures.value = currentMap
+            } catch (e: Exception) {
+                // Silently fail
+            } finally {
+                _loadingStations.value -= stationId
+            }
+        }
+    }
+
+    fun refreshStationGroup(platformIds: List<String>) {
+        platformIds.forEach { refreshStation(it) }
     }
 
     /**

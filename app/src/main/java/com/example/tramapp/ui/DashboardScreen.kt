@@ -12,6 +12,10 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +47,7 @@ fun DashboardScreen(
     val isManualLocation by viewModel.isManualLocation.collectAsState()
     val nearbyStations by viewModel.nearbyStations.collectAsState()
     val stationDepartures by viewModel.stationDepartures.collectAsState()
+    val loadingStations by viewModel.loadingStations.collectAsState()
     val status by viewModel.status.collectAsState()
     
     val cameraPositionState = rememberCameraPositionState {
@@ -182,22 +187,39 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            val expandedStations = remember { mutableStateMapOf<Int, Boolean>().apply { put(0, true) } }
+
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 contentPadding = PaddingValues(bottom = 100.dp)
             ) {
                 // Group platforms by base station name (strip [A], [B] etc.)
-                val stationsWithDeps = nearbyStations.filter { stationDepartures.containsKey(it.id) }
-                val grouped = stationsWithDeps.groupBy { station ->
+                val grouped = nearbyStations.groupBy { station ->
                     station.name.replace(Regex("\\s*\\[.*]$"), "").trim()
                 }
-                items(grouped.entries.toList()) { (baseName, platforms) ->
+                
+                itemsIndexed(grouped.entries.toList()) { index, (baseName, platforms) ->
+                    val platformIds = platforms.map { it.id }
+                    val isAnyLoading = platformIds.any { loadingStations.contains(it) }
                     val platformDeps = platforms.map { station ->
                         val platformLabel = Regex("\\[(.+)]$").find(station.name)?.groupValues?.get(1) ?: ""
                         platformLabel to (stationDepartures[station.id] ?: emptyList())
-                    }.filter { it.second.isNotEmpty() }
+                    }
+                    
+                    val isExpanded = expandedStations[index] ?: false
 
-                    StationGroupCard(baseName, platformDeps)
+                    StationGroupCard(
+                        baseName = baseName,
+                        platformDepartures = platformDeps,
+                        isExpanded = isExpanded,
+                        isLoading = isAnyLoading,
+                        onExpandToggle = {
+                            expandedStations[index] = !isExpanded
+                            if (!isExpanded && platformDeps.all { it.second.isEmpty() }) {
+                                viewModel.refreshStationGroup(platformIds)
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -227,7 +249,10 @@ fun HeaderSection() {
 @Composable
 fun StationGroupCard(
     baseName: String,
-    platformDepartures: List<Pair<String, List<com.example.tramapp.domain.SmartDeparture>>>
+    platformDepartures: List<Pair<String, List<com.example.tramapp.domain.SmartDeparture>>>,
+    isExpanded: Boolean,
+    isLoading: Boolean,
+    onExpandToggle: () -> Unit
 ) {
     val allDeps = platformDepartures.flatMap { it.second }
     val isAnyHomeBound = allDeps.any { it.isHomeBound }
@@ -246,6 +271,7 @@ fun StationGroupCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(SurfaceGlass)
+            .clickable { onExpandToggle() }
             .border(
                 width = if (isHighlighted) 2.dp else 1.dp,
                 brush = if (isHighlighted) {
@@ -257,8 +283,28 @@ fun StationGroupCard(
             )
             .padding(20.dp)
     ) {
-        // Station name
-        Text(baseName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        // Station name + Expand Icon
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(baseName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = AccentCyan,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = TextSecondary
+                )
+            }
+        }
 
         // Destination badges
         if (isHighlighted) {
@@ -270,40 +316,50 @@ fun StationGroupCard(
             }
         }
 
-        // Platform sections
-        platformDepartures.forEachIndexed { pIndex, (platformLabel, departures) ->
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Platform sub-header
-            if (platformLabel.isNotEmpty()) {
-                Text(
-                    "[$platformLabel]",
-                    color = AccentCyan,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+        if (isExpanded) {
+            if (platformDepartures.all { it.second.isEmpty() } && !isLoading) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("No departures found or tap to refresh.", color = TextSecondary, fontSize = 12.sp)
             }
 
-            // Departure rows for this platform
-            departures.forEachIndexed { index, smartDeparture ->
-                TramRow(smartDeparture)
-                if (index < departures.size - 1) {
-                    HorizontalDivider(color = GlassBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 10.dp))
+            // Platform sections
+            platformDepartures.forEachIndexed { pIndex, (platformLabel, departures) ->
+                if (departures.isEmpty()) return@forEachIndexed
+                
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Platform sub-header
+                if (platformLabel.isNotEmpty()) {
+                    Text(
+                        "[$platformLabel]",
+                        color = AccentCyan,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                 }
-            }
 
-            // Separator between platforms
-            if (pIndex < platformDepartures.size - 1) {
-                HorizontalDivider(
-                    color = AccentCyan.copy(alpha = 0.3f),
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
+                // Departure rows for this platform
+                departures.forEachIndexed { index, smartDeparture ->
+                    TramRow(smartDeparture)
+                    if (index < departures.size - 1) {
+                        HorizontalDivider(color = GlassBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 10.dp))
+                    }
+                }
+
+                // Separator between platforms
+                if (pIndex < platformDepartures.size - 1) {
+                    HorizontalDivider(
+                        color = AccentCyan.copy(alpha = 0.3f),
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
             }
         }
     }
 }
+
 
 @Composable
 fun DestinationBadge(label: String, color: Color) {
