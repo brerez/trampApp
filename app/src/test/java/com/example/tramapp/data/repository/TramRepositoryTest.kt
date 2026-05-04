@@ -62,9 +62,9 @@ class TramRepositoryTest {
 
         whenever(apiService.getStops(any(), any())).thenReturn(mockResponse)
 
-        val count = repository.refreshNearbyStations(50.099, 14.428, 1000)
+        val ids = repository.refreshNearbyStations(50.099, 14.428, 1000)
 
-        assertEquals(2, count)
+        assertEquals(2, ids.size)
         verify(stationDao).insertStations(any())
     }
 }
