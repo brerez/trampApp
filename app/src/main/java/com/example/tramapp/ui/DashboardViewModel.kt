@@ -30,14 +30,18 @@ class DashboardViewModel @Inject constructor(
 
     private val _currentNearbyStationIds = MutableStateFlow<Set<String>>(emptySet())
 
+    private val _stationDepartures = MutableStateFlow<Map<String, List<SmartDeparture>>>(emptyMap())
+    val stationDepartures: StateFlow<Map<String, List<SmartDeparture>>> = _stationDepartures.asStateFlow()
+
     val nearbyStations: StateFlow<List<StationEntity>> = combine(
         repository.allStations,
         currentLocation,
-        _currentNearbyStationIds
-    ) { all, loc, ids ->
+        _currentNearbyStationIds,
+        stationDepartures
+    ) { all, loc, ids, deps ->
         all.filter { station ->
             // Prioritize stations from the latest API call
-            if (ids.isNotEmpty()) {
+            val isNearby = if (ids.isNotEmpty()) {
                 ids.contains(station.id)
             } else {
                 // Fallback to simple distance check (< 2km)
@@ -45,14 +49,20 @@ class DashboardViewModel @Inject constructor(
                 val dLng = station.longitude - loc.longitude
                 (dLat * dLat + dLng * dLng) < 0.0004 // Approx 2km squared
             }
+
+            if (!isNearby) return@filter false
+
+            // Only show if it has trams (if we've loaded its departures)
+            if (deps.containsKey(station.id)) {
+                deps[station.id]?.isNotEmpty() == true
+            } else {
+                true // Show if not loaded yet
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _status = MutableStateFlow("Initializing...")
     val status: StateFlow<String> = _status.asStateFlow()
-
-    private val _stationDepartures = MutableStateFlow<Map<String, List<SmartDeparture>>>(emptyMap())
-    val stationDepartures: StateFlow<Map<String, List<SmartDeparture>>> = _stationDepartures.asStateFlow()
 
     private val _loadingStations = MutableStateFlow<Set<String>>(emptySet())
     val loadingStations: StateFlow<Set<String>> = _loadingStations.asStateFlow()
@@ -263,9 +273,7 @@ class DashboardViewModel @Inject constructor(
                 val prefs = preferencesManager.userPreferences.first()
                 val deps = getSmartDepartures.execute(stationId, loc.latitude, loc.longitude, prefs)
                 val currentMap = _stationDepartures.value.toMutableMap()
-                if (deps.isNotEmpty()) {
-                    currentMap[stationId] = deps.take(5)
-                }
+                currentMap[stationId] = deps.take(5)
                 _stationDepartures.value = currentMap
             } catch (e: Exception) {
                 // Silently fail
