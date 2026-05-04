@@ -1,5 +1,7 @@
 package com.example.tramapp.di
 
+import com.example.tramapp.BuildConfig
+import com.example.tramapp.data.remote.GolemioService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -17,15 +19,13 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val BASE_URL = "https://api.golemio.cz/v2/"
-    // Note: In a real production app, this should be injected securely or kept in local.properties
-    private const val API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NDk2MSwiaWF0IjoxNzc3NTM0NTc2LCJleHAiOjExNzc3NTM0NTc2LCJpc3MiOiJnb2xlbWlvIiwianRpIjoiMzk4ZGYxYjUtNTdiMC00NzBiLWE5MDYtN2NkMGQ5YTQ5NTRjIn0.V48CQMwm7mlZnWOe3Momq84wk6Ah23OxLSdo2yEUkXw"
 
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val authInterceptor = Interceptor { chain ->
             val request = chain.request().newBuilder()
-                .addHeader("x-access-token", API_KEY)
+                .addHeader("x-access-token", BuildConfig.GOLEMIO_API_KEY)
                 .build()
             chain.proceed(request)
         }
@@ -39,7 +39,6 @@ object NetworkModule {
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            // Retry on connection failure is handled natively, but we can add an interceptor for exponential backoff if needed
             .retryOnConnectionFailure(true)
             .build()
     }
@@ -52,5 +51,11 @@ object NetworkModule {
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGolemioService(retrofit: Retrofit): GolemioService {
+        return retrofit.create(GolemioService::class.java)
     }
 }
