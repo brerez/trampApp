@@ -1,6 +1,7 @@
 package com.example.tramapp.data.remote
 
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface GolemioService {
@@ -18,4 +19,11 @@ interface GolemioService {
         @Query("minutesBefore") minutesBefore: Int = 0,
         @Query("minutesAfter") minutesAfter: Int = 60
     ): DepartureResponse
+
+    @GET("gtfs/trips/{id}")
+    suspend fun getTripDetails(
+        @Path("id") tripId: String,
+        @Query("includeStopTimes") includeStopTimes: Boolean = true,
+        @Query("includeShapes") includeShapes: Boolean = true
+    ): TripDetailsResponse
 }

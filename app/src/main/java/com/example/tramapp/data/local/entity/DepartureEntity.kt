@@ -11,5 +11,6 @@ data class DepartureEntity(
     val routeType: Int,
     val headsign: String,
     val arrivalTime: String, // ISO-8601
-    val isPredicted: Boolean
+    val isPredicted: Boolean,
+    val tripId: String? = null
 )

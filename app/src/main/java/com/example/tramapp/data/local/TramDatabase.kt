@@ -9,7 +9,7 @@ import com.example.tramapp.data.local.entity.DepartureEntity
 import com.example.tramapp.data.local.entity.ScheduleEntity
 import com.example.tramapp.data.local.entity.StationEntity
 
-@Database(entities = [StationEntity::class, ScheduleEntity::class, DepartureEntity::class], version = 2, exportSchema = false)
+@Database(entities = [StationEntity::class, ScheduleEntity::class, DepartureEntity::class], version = 3, exportSchema = false)
 abstract class TramDatabase : RoomDatabase() {
     abstract fun stationDao(): StationDao
     abstract fun scheduleDao(): ScheduleDao

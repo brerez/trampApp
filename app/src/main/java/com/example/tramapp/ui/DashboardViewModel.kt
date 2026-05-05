@@ -66,6 +66,17 @@ class DashboardViewModel @Inject constructor(
 
     private val _loadingStations = MutableStateFlow<Set<String>>(emptySet())
     val loadingStations: StateFlow<Set<String>> = _loadingStations.asStateFlow()
+    
+    private val _selectedTripDetails = MutableStateFlow<com.example.tramapp.domain.TripDetails?>(null)
+    val selectedTripDetails: StateFlow<com.example.tramapp.domain.TripDetails?> = _selectedTripDetails.asStateFlow()
+
+    private val _showTripPopup = MutableStateFlow(false)
+    val showTripPopup: StateFlow<Boolean> = _showTripPopup.asStateFlow()
+
+    private val _isTripLoading = MutableStateFlow(false)
+    val isTripLoading: StateFlow<Boolean> = _isTripLoading.asStateFlow()
+
+    private var tripFetchJob: kotlinx.coroutines.Job? = null
 
     init {
         viewModelScope.launch {
@@ -285,6 +296,33 @@ class DashboardViewModel @Inject constructor(
 
     fun refreshStationGroup(platformIds: List<String>) {
         platformIds.forEach { refreshStation(it) }
+    }
+
+    fun selectTram(tripId: String, routeName: String, destination: String) {
+        _showTripPopup.value = true
+        _isTripLoading.value = true
+        _selectedTripDetails.value = null
+        
+        tripFetchJob?.cancel()
+        tripFetchJob = viewModelScope.launch {
+            try {
+                val details = repository.getTripDetails(tripId, routeName, destination)
+                _selectedTripDetails.value = details
+            } catch (e: Exception) {
+                // Handle error
+            } finally {
+                _isTripLoading.value = false
+            }
+        }
+    }
+
+    fun dismissTripPopup() {
+        _showTripPopup.value = false
+        tripFetchJob?.cancel()
+        _isTripLoading.value = false
+        // We keep _selectedTripDetails for a smooth exit animation if needed, 
+        // or clear it immediately. Let's clear it to be safe.
+        _selectedTripDetails.value = null
     }
 
     /**

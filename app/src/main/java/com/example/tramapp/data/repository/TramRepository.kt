@@ -61,7 +61,8 @@ class TramRepository @Inject constructor(
                 routeType = item.route.type,
                 headsign = item.trip.headsign,
                 arrivalTime = item.arrival.predicted ?: item.arrival.scheduled,
-                isPredicted = item.arrival.predicted != null
+                isPredicted = item.arrival.predicted != null,
+                tripId = item.trip.tripId
             )
         }
         departureDao.insertDepartures(entities)
@@ -72,7 +73,7 @@ class TramRepository @Inject constructor(
         return entities.map { entity ->
             DepartureItem(
                 route = com.example.tramapp.data.remote.RouteInfo(entity.routeShortName, entity.routeType),
-                trip = com.example.tramapp.data.remote.TripInfo(entity.headsign),
+                trip = com.example.tramapp.data.remote.TripInfo(entity.headsign, entity.tripId),
                 arrival = com.example.tramapp.data.remote.TimestampInfo(entity.arrivalTime, if (entity.isPredicted) entity.arrivalTime else null),
                 stop = com.example.tramapp.data.remote.StopInfo(entity.stopId)
             )
@@ -81,6 +82,33 @@ class TramRepository @Inject constructor(
 
     suspend fun toggleFavorite(stationId: String, isFavorite: Boolean) {
         stationDao.updateFavoriteStatus(stationId, isFavorite)
+    }
+
+    suspend fun getTripDetails(tripId: String, routeName: String, destination: String): com.example.tramapp.domain.TripDetails {
+        val response = apiService.getTripDetails(tripId)
+        
+        val stations = response.stopTimes.map { 
+            com.example.tramapp.domain.TripStation(
+                id = it.stopId,
+                name = it.stop.stopName,
+                sequence = it.stopSequence
+            )
+        }.sortedBy { it.sequence }
+
+        val polyline = response.shapes.map { feature ->
+            com.google.android.gms.maps.model.LatLng(
+                feature.geometry.coordinates[1],
+                feature.geometry.coordinates[0]
+            )
+        }
+
+        return com.example.tramapp.domain.TripDetails(
+            tripId = tripId,
+            routeName = routeName,
+            destination = destination,
+            stations = stations,
+            polyline = polyline
+        )
     }
 
     /**
