@@ -9,10 +9,15 @@ import com.example.tramapp.domain.GetSmartDeparturesUseCase
 import com.example.tramapp.domain.SmartDeparture
 import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val repository: TramRepository,
@@ -76,7 +81,22 @@ class DashboardViewModel @Inject constructor(
     private val _isTripLoading = MutableStateFlow(false)
     val isTripLoading: StateFlow<Boolean> = _isTripLoading.asStateFlow()
 
+    val apiQueryCount: StateFlow<Int> = repository.apiQueryCount
+
+    val throttleMessage: StateFlow<String?> = repository.throttleUntil.flatMapLatest { until: Long ->
+        flow {
+            while (until > System.currentTimeMillis()) {
+                val seconds = (until - System.currentTimeMillis() + 999) / 1000
+                emit("API Throttled: Resuming in ${seconds}s")
+                kotlinx.coroutines.delay(1000)
+            }
+            emit(null)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     private var tripFetchJob: kotlinx.coroutines.Job? = null
+    private val stationJobs = mutableMapOf<String, Job>()
+    private val enrichmentJobs = mutableMapOf<String, Job>()
 
     init {
         viewModelScope.launch {
@@ -103,12 +123,14 @@ class DashboardViewModel @Inject constructor(
         // Step 5: Build/refresh destination line caches in background (non-blocking)
         // Delayed to let initial departure loading finish first and avoid API rate limits.
         viewModelScope.launch {
-            kotlinx.coroutines.delay(10000) // Wait 10s for departures to load first
+            kotlinx.coroutines.delay(2000)
             try {
+                println("🔍 DashboardViewModel: Starting destination cache refresh...")
                 val prefs = preferencesManager.userPreferences.first()
                 destinationLineCache.refreshIfNeeded(prefs)
+                println("🔍 DashboardViewModel: Destination cache refresh completed.")
             } catch (e: Exception) {
-                // Cache refresh failure is not critical
+                println("❌ DashboardViewModel: Cache refresh failed: ${e.message}")
             }
         }
     }
@@ -155,32 +177,34 @@ class DashboardViewModel @Inject constructor(
 
     /** Reacts to nearbyStations changes instead of polling every 15s */
     private fun startDepartureLoop() {
-        // Reactive: fires immediately whenever the station list changes
         viewModelScope.launch {
-            nearbyStations.collect { stations ->
-                if (stations.isEmpty()) return@collect
+            _currentNearbyStationIds.collectLatest { stationIds ->
+                if (stationIds.isEmpty()) return@collectLatest
                 val loc = currentLocation.value
                 val prefs = preferencesManager.userPreferences.first()
 
-                val sortedStations = stations.sortedBy { station ->
-                    val dLat = station.latitude - loc.latitude
-                    val dLng = station.longitude - loc.longitude
-                    dLat * dLat + dLng * dLng
-                }
+                // Sort the raw IDs by distance to find which ones to load
+                val allStations = repository.allStations.first()
+                val sortedStations = allStations
+                    .filter { it.id in stationIds }
+                    .sortedBy { station ->
+                        val dLat = station.latitude - loc.latitude
+                        val dLng = station.longitude - loc.longitude
+                        dLat * dLat + dLng * dLng
+                    }
 
-                // Only preload the first X groups (maxStations)
-                val groupsToLoad = selectStationsByName(sortedStations, prefs.maxStations)
-                groupsToLoad.forEach { station ->
+                val groupsToLoad = selectStationsByName(sortedStations, 2) // Limit to top 2 stations
+                groupsToLoad.take(6).forEach { station -> // Max 6 platforms total
                     refreshStation(station.id)
-                    kotlinx.coroutines.delay(100)
+                    kotlinx.coroutines.delay(500) // Increase delay between platform loads
                 }
             }
         }
 
-        // Periodic re-trigger every 15s to keep data fresh
+        // Periodic re-trigger every 30s to keep data fresh (increased from 15s)
         viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(15000)
+                kotlinx.coroutines.delay(30000)
                 val loc = currentLocation.value
                 val prefs = preferencesManager.userPreferences.first()
                 try {
@@ -198,7 +222,7 @@ class DashboardViewModel @Inject constructor(
         // Automatically refresh when location changes (Debounced)
         viewModelScope.launch {
             currentLocation
-                .debounce(1500)
+                .debounce(5000)
                 .distinctUntilChanged()
                 .combine(preferencesManager.userPreferences) { loc, prefs -> loc to prefs }
                 .collect { (loc, prefs) ->
@@ -276,21 +300,66 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refreshStation(stationId: String) {
-        viewModelScope.launch {
+        stationJobs[stationId]?.cancel()
+        stationJobs[stationId] = viewModelScope.launch {
             if (_loadingStations.value.contains(stationId)) return@launch
             _loadingStations.value += stationId
             try {
-                val loc = currentLocation.value
                 val prefs = preferencesManager.userPreferences.first()
-                val deps = getSmartDepartures.execute(stationId, loc.latitude, loc.longitude, prefs)
+                val stationName = repository.allStations.first().find { it.id == stationId }?.name ?: "Unknown"
+
+                // PRIORITY 1: Get trams immediately (non-blocking)
+                val deps = getSmartDepartures.execute(stationId, prefs)
+                
                 val currentMap = _stationDepartures.value.toMutableMap()
                 currentMap[stationId] = deps.take(5)
                 _stationDepartures.value = currentMap
+
+                // 3. Enrich with directional info (async, serial to avoid API limits)
+                enrichStation(stationId, stationName, deps.take(5), prefs)
             } catch (e: Exception) {
                 // Silently fail
             } finally {
                 _loadingStations.value -= stationId
+                stationJobs.remove(stationId)
             }
+        }
+    }
+
+    private fun enrichStation(stationId: String, stationName: String, departures: List<SmartDeparture>, prefs: com.example.tramapp.data.local.datastore.UserPreferences) {
+        enrichmentJobs[stationId]?.cancel()
+        enrichmentJobs[stationId] = viewModelScope.launch {
+            val loc = currentLocation.value
+            val updatedDeps = departures.toMutableList()
+            var anyChanged = false
+
+            for (i in updatedDeps.indices) {
+                ensureActive()
+                val smartDep = updatedDeps[i]
+                try {
+                    val bounds = getSmartDepartures.checkBounds(smartDep.item, stationName, prefs, loc.latitude, loc.longitude)
+                    if (bounds.first != smartDep.isHomeBound || bounds.second != smartDep.isWorkBound || bounds.third != smartDep.isSchoolBound) {
+                        updatedDeps[i] = smartDep.copy(
+                            isHomeBound = bounds.first,
+                            isWorkBound = bounds.second,
+                            isSchoolBound = bounds.third
+                        )
+                        anyChanged = true
+                    }
+                    // Small delay between trams
+                    kotlinx.coroutines.delay(150)
+                } catch (e: Exception) { 
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    /* skip */ 
+                }
+            }
+
+            if (anyChanged) {
+                val currentMap = _stationDepartures.value.toMutableMap()
+                currentMap[stationId] = updatedDeps
+                _stationDepartures.value = currentMap
+            }
+            enrichmentJobs.remove(stationId)
         }
     }
 

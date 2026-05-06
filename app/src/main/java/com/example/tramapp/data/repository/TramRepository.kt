@@ -1,51 +1,130 @@
 package com.example.tramapp.data.repository
 
-import com.example.tramapp.data.local.dao.StationDao
-import com.example.tramapp.data.local.entity.StationEntity
+import com.example.tramapp.data.local.dao.*
+import com.example.tramapp.data.local.entity.*
 import com.example.tramapp.data.remote.DepartureItem
 import com.example.tramapp.data.remote.GolemioService
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class NearbyInfo(val lineNames: Set<String>, val stopNames: Set<String>, val stopIds: Set<String>)
 
 @Singleton
 class TramRepository @Inject constructor(
     private val apiService: GolemioService,
     private val stationDao: StationDao,
-    private val departureDao: com.example.tramapp.data.local.dao.DepartureDao
+    private val departureDao: com.example.tramapp.data.local.dao.DepartureDao,
+    private val tripRouteDao: TripRouteDao,
+    private val lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
 ) {
+    private val tripFetchMutex = Mutex()
+    private val ongoingTripFetches = mutableMapOf<String, Deferred<List<String>>>()
+
+    private val _throttleUntil = MutableStateFlow(0L)
+    val throttleUntil: StateFlow<Long> = _throttleUntil.asStateFlow()
+
+    private val _apiQueryCount = MutableStateFlow(0)
+    val apiQueryCount: StateFlow<Int> = _apiQueryCount.asStateFlow()
+
+    private val throttleMutex = Mutex()
+
+    private suspend fun checkThrottle() {
+        val now = System.currentTimeMillis()
+        if (now < _throttleUntil.value) {
+            val waitTime = _throttleUntil.value - now
+            println("🛑 API Throttled! Waiting ${waitTime}ms...")
+            delay(waitTime)
+        }
+    }
+
+    private suspend fun handleThrottle(e: Exception) {
+        if (e is retrofit2.HttpException && e.code() == 429) {
+            throttleMutex.withLock {
+                _throttleUntil.value = System.currentTimeMillis() + 10000
+            }
+        }
+    }
+
+    private var lastRequestTime = 0L
+
+    private suspend fun <T> withRetry(block: suspend () -> T): T {
+        var retryCount = 0
+        while (true) {
+            checkThrottle()
+            
+            // Rate Limiting: Ensure at least 300ms between requests to avoid bursts
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastRequestTime
+            if (elapsed < 300) {
+                delay(300 - elapsed)
+            }
+            lastRequestTime = System.currentTimeMillis()
+
+            try {
+                _apiQueryCount.value++ // Increment debug counter
+                return block()
+            } catch (e: Exception) {
+                handleThrottle(e)
+                if (retryCount >= 2 || (e is retrofit2.HttpException && e.code() != 429)) throw e
+                retryCount++
+                delay(2000L * retryCount) // Longer backoff for 429s
+            }
+        }
+    }
     val allStations: Flow<List<StationEntity>> = stationDao.getAllStations()
 
     suspend fun refreshNearbyStations(lat: Double, lng: Double, radius: Int): List<String> {
-        val response = apiService.getStops("$lat,$lng", limit = 20)
-        val entities = response.features.filter { it.properties.locationType == 0 }.map { feature ->
-            val platform = feature.properties.platformCode ?: ""
-            val displayName = if (platform.isNotEmpty()) "${feature.properties.stopName} [$platform]" else feature.properties.stopName
-            
-            StationEntity(
-                id = feature.properties.stopId,
-                name = displayName,
-                latitude = feature.geometry.coordinates[1],
-                longitude = feature.geometry.coordinates[0],
-                direction = platform,
-                isFavorite = false
-            )
+        val existing = stationDao.getAllStations().first()
+        val recentNearby = existing.filter { s: com.example.tramapp.data.local.entity.StationEntity ->
+            val dLat = s.latitude - lat
+            val dLng = s.longitude - lng
+            val distSq = dLat * dLat + dLng * dLng
+            distSq < 0.0001 && (System.currentTimeMillis() - s.lastUpdate < 24 * 60 * 60 * 1000)
         }
-        stationDao.insertStations(entities)
-        return entities.map { it.id }
+        
+        if (recentNearby.isNotEmpty()) {
+            return recentNearby.map { s: com.example.tramapp.data.local.entity.StationEntity -> s.id }
+        }
+
+        try {
+            val response = withRetry { apiService.getStops("$lat,$lng", limit = 100) }
+            val stationEntities = response.features
+                .filter { it.properties.locationType == 0 }
+                .map { feature ->
+                    val platformLabel = feature.properties.platformCode?.let { " [$it]" } ?: ""
+                    StationEntity(
+                        id = feature.properties.stopId,
+                        name = feature.properties.stopName + platformLabel,
+                        latitude = feature.geometry.coordinates[1],
+                        longitude = feature.geometry.coordinates[0],
+                        lastUpdate = System.currentTimeMillis()
+                    )
+                }
+
+            if (stationEntities.isNotEmpty()) {
+                stationDao.insertStations(stationEntities)
+            }
+            return stationEntities.map { it.id }
+        } catch (e: Exception) {
+            return emptyList()
+        }
     }
 
     suspend fun getDepartures(stopId: String): List<DepartureItem> {
         return try {
-            val response = apiService.getDepartures(stopId)
-            // Strictly filter for Trams (Type 0)
+            val response = withRetry { apiService.getDepartures(stopId) }
             val tramOnly = response.departures.filter { it.route.type == 0 }
-            
-            // Cache these results
             if (tramOnly.isNotEmpty()) {
                 saveDeparturesToCache(stopId, tramOnly)
             }
-            
             tramOnly
         } catch (e: Exception) {
             emptyList()
@@ -84,67 +163,117 @@ class TramRepository @Inject constructor(
         stationDao.updateFavoriteStatus(stationId, isFavorite)
     }
 
-    suspend fun getTripDetails(tripId: String, routeName: String, destination: String): com.example.tramapp.domain.TripDetails {
-        val response = apiService.getTripDetails(tripId)
-        
-        val stations = response.stopTimes.map { 
-            com.example.tramapp.domain.TripStation(
-                id = it.stopId,
-                name = it.stop.stopName,
-                sequence = it.stopSequence
-            )
-        }.sortedBy { it.sequence }
+    suspend fun getTripSequence(lineName: String, headsign: String, tripId: String): List<String> {
+        val routeKey = "$lineName-$headsign"
+        // 1. Check Room Cache by RouteKey
+        val cached = tripRouteDao.getTripRoute(routeKey)
+        if (cached != null && System.currentTimeMillis() - cached.timestamp < 24 * 60 * 60 * 1000) {
+            if (cached.stopIds == "EMPTY") return emptyList()
+            // Support legacy format if it exists, or new format
+            if (cached.stopIds.contains("||ID:")) {
+                val parts = cached.stopIds.split("||ID:")
+                return parts[1].split("|")
+            }
+            return cached.stopIds.split("|")
+        }
 
-        val polyline = response.shapes.map { feature ->
-            com.google.android.gms.maps.model.LatLng(
-                feature.geometry.coordinates[1],
-                feature.geometry.coordinates[0]
+        // 2. Network Fetch (Atomic per RouteKey)
+        val deferred = tripFetchMutex.withLock {
+            ongoingTripFetches[routeKey] ?: CoroutineScope(Dispatchers.IO).async {
+                try {
+                    val response = withRetry { apiService.getTripDetails(tripId) }
+                    val sorted = response.stopTimes.sortedBy { it.stopSequence }
+                    val ids = sorted.map { it.stopId }
+                    
+                    tripRouteDao.insertTripRoute(
+                        TripRouteEntity(
+                            routeKey = routeKey,
+                            stopIds = ids.joinToString("|"),
+                            timestamp = System.currentTimeMillis()
+                        )
+                    )
+                    
+                    if (ids.isEmpty()) {
+                        // Cache the failure for 1 minute to prevent hammering the API
+                        tripRouteDao.insertTripRoute(
+                            TripRouteEntity(
+                                routeKey = routeKey,
+                                stopIds = "EMPTY",
+                                timestamp = System.currentTimeMillis() - (24 * 60 * 60 * 1000 - 60 * 1000) // Expires in 1 minute
+                            )
+                        )
+                    }
+                    ids
+                } catch (e: Exception) {
+                    emptyList<String>()
+                } finally {
+                    tripFetchMutex.withLock { ongoingTripFetches.remove(routeKey) }
+                }
+            }.also { ongoingTripFetches[routeKey] = it }
+        }
+
+        return deferred.await()
+    }
+
+    suspend fun getNearbyInfo(lat: Double, lng: Double): NearbyInfo {
+        // 1. Check local DB for recent stations in this area
+        val existing = stationDao.getAllStations().first()
+        val recentNearby = existing.filter { s: com.example.tramapp.data.local.entity.StationEntity ->
+            val dLat = s.latitude - lat
+            val dLng = s.longitude - lng
+            val distSq = dLat * dLat + dLng * dLng
+            distSq < 0.0001 && (System.currentTimeMillis() - s.lastUpdate < 24 * 60 * 60 * 1000)
+        }
+
+        if (recentNearby.isNotEmpty()) {
+            return NearbyInfo(
+                emptySet(), 
+                recentNearby.map { it.name.replace(Regex("\\s*\\[.*]$"), "").trim() }.toSet(),
+                recentNearby.map { it.id }.toSet()
             )
         }
 
-        return com.example.tramapp.domain.TripDetails(
-            tripId = tripId,
-            routeName = routeName,
-            destination = destination,
-            stations = stations,
-            polyline = polyline
-        )
-    }
-
-    /**
-     * Discovers which tram lines serve stations within ~750m of a given location.
-     * Used to build the destination line cache for smart route detection.
-     * Throttled to avoid hitting Golemio API rate limits (429).
-     */
-    suspend fun getLineNamesNearLocation(lat: Double, lng: Double): Set<String> {
-        val lineNames = mutableSetOf<String>()
+        val stopNames = mutableSetOf<String>()
+        val stopIds = mutableSetOf<String>()
         try {
-            val response = apiService.getStops("$lat,$lng", limit = 10)
+            val response = withRetry { apiService.getStops("$lat,$lng", limit = 20) }
             val nearbyStops = response.features
                 .filter { it.properties.locationType == 0 }
                 .filter { stop ->
                     val dLat = stop.geometry.coordinates[1] - lat
                     val dLng = stop.geometry.coordinates[0] - lng
-                    dLat * dLat + dLng * dLng <= 0.00005  // ~750m
+                    dLat * dLat + dLng * dLng <= 0.0001 
                 }
-                .take(4) // Limit to 4 stops to reduce API calls
-
+ 
             for (stop in nearbyStops) {
-                try {
-                    kotlinx.coroutines.delay(500) // Throttle to avoid 429
-                    val deps = apiService.getDepartures(stop.properties.stopId, limit = 20, minutesAfter = 180)
-                    for (dep in deps.departures) {
-                        if (dep.route.type == 0) {
-                            lineNames.add(dep.route.shortName)
-                        }
-                    }
-                } catch (e: Exception) {
-                    // Skip this stop if departures fail
-                }
+                val baseName = stop.properties.stopName.replace(Regex("\\s*\\[.*]$"), "").trim()
+                stopNames.add(baseName)
+                stopIds.add(stop.properties.stopId)
             }
-        } catch (e: Exception) {
-            // Return whatever we collected
+        } catch (e: Exception) { /* skip */ }
+        return NearbyInfo(emptySet(), stopNames, stopIds)
+    }
+
+    suspend fun getCachedDirection(stopId: String, lineName: String, headsign: String, destType: String): Boolean? {
+        return lineDirectionDao.getDirection(stopId, lineName, headsign, destType)?.isBound
+    }
+
+    suspend fun saveDirection(stopId: String, lineName: String, headsign: String, destType: String, isBound: Boolean) {
+        lineDirectionDao.insertDirection(
+            com.example.tramapp.data.local.entity.LineDirectionEntity(
+                stopId, lineName, headsign, destType, isBound, System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun getTripDetails(tripId: String, routeName: String, destination: String): com.example.tramapp.domain.TripDetails {
+        val response = withRetry { apiService.getTripDetails(tripId) }
+        val stations = response.stopTimes.map { 
+            com.example.tramapp.domain.TripStation(id = it.stopId, name = it.stop?.stopName ?: "Station ${it.stopId}", sequence = it.stopSequence)
+        }.sortedBy { it.sequence }
+        val polyline = response.shapes.map { feature ->
+            com.google.android.gms.maps.model.LatLng(feature.geometry.coordinates[1], feature.geometry.coordinates[0])
         }
-        return lineNames
+        return com.example.tramapp.domain.TripDetails(tripId, routeName, destination, stations, polyline)
     }
 }

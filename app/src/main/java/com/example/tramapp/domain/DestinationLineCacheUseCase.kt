@@ -6,15 +6,8 @@ import com.example.tramapp.data.repository.TramRepository
 import javax.inject.Inject
 
 /**
- * Builds/refreshes the cached set of tram line names that serve stations
- * near each saved destination (home/work/school).
- *
- * The cache is stored in DataStore and invalidated when:
- * - The destination location is changed by the user
- * - The cache is older than 7 days
- *
- * This should be called from the ViewModel on startup (in background).
- * It does NOT block the departure display.
+ * Builds/refreshes the cached set of stop names that serve stations
+ * near each saved destination.
  */
 class DestinationLineCacheUseCase @Inject constructor(
     private val repository: TramRepository,
@@ -23,32 +16,35 @@ class DestinationLineCacheUseCase @Inject constructor(
     suspend fun refreshIfNeeded(preferences: UserPreferences) {
         // Home
         if (preferences.homeLat != null && preferences.homeLng != null) {
-            if (preferences.homeLines.isEmpty() || preferencesManager.isCacheStale(preferences.homeLinesTimestamp)) {
-                val lines = repository.getLineNamesNearLocation(preferences.homeLat, preferences.homeLng)
-                if (lines.isNotEmpty()) {
-                    preferencesManager.updateDestinationLines("home", lines)
+            if (preferences.homeStopNames.isEmpty() || preferences.homeStopIds.isEmpty() || preferencesManager.isCacheStale(preferences.homeLinesTimestamp)) {
+                println("🔍 DestinationCache: Home refresh...")
+                val info = repository.getNearbyInfo(preferences.homeLat, preferences.homeLng)
+                if (info.stopNames.isNotEmpty()) {
+                    preferencesManager.updateDestinationData("home", emptySet(), info.stopNames, info.stopIds)
+                    kotlinx.coroutines.delay(1000)
                 }
-                kotlinx.coroutines.delay(2000) // Spread API load
             }
         }
 
         // Work
         if (preferences.workLat != null && preferences.workLng != null) {
-            if (preferences.workLines.isEmpty() || preferencesManager.isCacheStale(preferences.workLinesTimestamp)) {
-                val lines = repository.getLineNamesNearLocation(preferences.workLat, preferences.workLng)
-                if (lines.isNotEmpty()) {
-                    preferencesManager.updateDestinationLines("work", lines)
+            if (preferences.workStopNames.isEmpty() || preferences.workStopIds.isEmpty() || preferencesManager.isCacheStale(preferences.workLinesTimestamp)) {
+                println("🔍 DestinationCache: Work refresh...")
+                val info = repository.getNearbyInfo(preferences.workLat, preferences.workLng)
+                if (info.stopNames.isNotEmpty()) {
+                    preferencesManager.updateDestinationData("work", emptySet(), info.stopNames, info.stopIds)
+                    kotlinx.coroutines.delay(1000)
                 }
-                kotlinx.coroutines.delay(2000)
             }
         }
 
         // School
         if (preferences.schoolLat != null && preferences.schoolLng != null) {
-            if (preferences.schoolLines.isEmpty() || preferencesManager.isCacheStale(preferences.schoolLinesTimestamp)) {
-                val lines = repository.getLineNamesNearLocation(preferences.schoolLat, preferences.schoolLng)
-                if (lines.isNotEmpty()) {
-                    preferencesManager.updateDestinationLines("school", lines)
+            if (preferences.schoolStopNames.isEmpty() || preferences.schoolStopIds.isEmpty() || preferencesManager.isCacheStale(preferences.schoolLinesTimestamp)) {
+                println("🔍 DestinationCache: School refresh...")
+                val info = repository.getNearbyInfo(preferences.schoolLat, preferences.schoolLng)
+                if (info.stopNames.isNotEmpty()) {
+                    preferencesManager.updateDestinationData("school", emptySet(), info.stopNames, info.stopIds)
                 }
             }
         }

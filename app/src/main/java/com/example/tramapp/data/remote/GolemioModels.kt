@@ -53,7 +53,7 @@ data class TripDetailsResponse(
 data class TripStopTime(
     @SerializedName("stop_id") val stopId: String,
     @SerializedName("stop_sequence") val stopSequence: Int,
-    @SerializedName("stop") val stop: TripStopInfo
+    @SerializedName("stop") val stop: TripStopInfo? = null
 )
 
 data class TripStopInfo(

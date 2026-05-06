@@ -27,12 +27,18 @@ class TramRepositoryTest {
     @Mock
     lateinit var departureDao: com.example.tramapp.data.local.dao.DepartureDao
 
+    @Mock
+    lateinit var tripRouteDao: com.example.tramapp.data.local.dao.TripRouteDao
+
+    @Mock
+    lateinit var lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
+
     lateinit var repository: TramRepository
 
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
-        repository = TramRepository(apiService, stationDao, departureDao)
+        repository = TramRepository(apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao)
     }
 
     @Test
@@ -61,6 +67,7 @@ class TramRepositoryTest {
         val mockResponse = GolemioResponse(features = mockFeatures)
 
         whenever(apiService.getStops(any(), any())).thenReturn(mockResponse)
+        whenever(stationDao.getAllStations()).thenReturn(kotlinx.coroutines.flow.flowOf(emptyList()))
 
         val ids = repository.refreshNearbyStations(50.099, 14.428, 1000)
 

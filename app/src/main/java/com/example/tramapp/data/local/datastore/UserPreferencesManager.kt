@@ -31,6 +31,12 @@ data class UserPreferences(
     val homeLines: Set<String>,
     val workLines: Set<String>,
     val schoolLines: Set<String>,
+    val homeStopNames: Set<String>,
+    val workStopNames: Set<String>,
+    val schoolStopNames: Set<String>,
+    val homeStopIds: Set<String>,
+    val workStopIds: Set<String>,
+    val schoolStopIds: Set<String>,
     val homeLinesTimestamp: Long,
     val workLinesTimestamp: Long,
     val schoolLinesTimestamp: Long
@@ -60,6 +66,12 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
         private val HOME_LINES = stringPreferencesKey("home_lines")
         private val WORK_LINES = stringPreferencesKey("work_lines")
         private val SCHOOL_LINES = stringPreferencesKey("school_lines")
+        private val HOME_STOPS = stringPreferencesKey("home_stop_names")
+        private val WORK_STOPS = stringPreferencesKey("work_stop_names")
+        private val SCHOOL_STOPS = stringPreferencesKey("school_stop_names")
+        private val HOME_STOP_IDS = stringPreferencesKey("home_stop_ids")
+        private val WORK_STOP_IDS = stringPreferencesKey("work_stop_ids")
+        private val SCHOOL_STOP_IDS = stringPreferencesKey("school_stop_ids")
         private val HOME_LINES_TS = longPreferencesKey("home_lines_ts")
         private val WORK_LINES_TS = longPreferencesKey("work_lines_ts")
         private val SCHOOL_LINES_TS = longPreferencesKey("school_lines_ts")
@@ -86,6 +98,12 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
             homeLines = preferences[HOME_LINES]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
             workLines = preferences[WORK_LINES]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
             schoolLines = preferences[SCHOOL_LINES]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            homeStopNames = preferences[HOME_STOPS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            workStopNames = preferences[WORK_STOPS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            schoolStopNames = preferences[SCHOOL_STOPS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            homeStopIds = preferences[HOME_STOP_IDS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            workStopIds = preferences[WORK_STOP_IDS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            schoolStopIds = preferences[SCHOOL_STOP_IDS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
             homeLinesTimestamp = preferences[HOME_LINES_TS] ?: 0L,
             workLinesTimestamp = preferences[WORK_LINES_TS] ?: 0L,
             schoolLinesTimestamp = preferences[SCHOOL_LINES_TS] ?: 0L
@@ -109,6 +127,7 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
             it[HOME_LAT] = lat; it[HOME_LNG] = lng; it[HOME_ADDRESS] = address
             // Invalidate line cache when location changes
             it.remove(HOME_LINES); it.remove(HOME_LINES_TS)
+            it.remove(HOME_STOPS); it.remove(HOME_STOP_IDS)
         }
     }
 
@@ -116,6 +135,7 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
         dataStore.edit {
             it[WORK_LAT] = lat; it[WORK_LNG] = lng; it[WORK_ADDRESS] = address
             it.remove(WORK_LINES); it.remove(WORK_LINES_TS)
+            it.remove(WORK_STOPS); it.remove(WORK_STOP_IDS)
         }
     }
 
@@ -123,17 +143,35 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
         dataStore.edit {
             it[SCHOOL_LAT] = lat; it[SCHOOL_LNG] = lng; it[SCHOOL_ADDRESS] = address
             it.remove(SCHOOL_LINES); it.remove(SCHOOL_LINES_TS)
+            it.remove(SCHOOL_STOPS); it.remove(SCHOOL_STOP_IDS)
         }
     }
 
-    suspend fun updateDestinationLines(type: String, lines: Set<String>) {
+    suspend fun updateDestinationData(type: String, lines: Set<String>, stopNames: Set<String>, stopIds: Set<String>) {
         dataStore.edit { prefs ->
-            val csv = lines.joinToString(",")
+            val linesCsv = lines.joinToString(",")
+            val namesPipe = stopNames.joinToString("|")
+            val idsPipe = stopIds.joinToString("|")
             val now = System.currentTimeMillis()
             when (type) {
-                "home" -> { prefs[HOME_LINES] = csv; prefs[HOME_LINES_TS] = now }
-                "work" -> { prefs[WORK_LINES] = csv; prefs[WORK_LINES_TS] = now }
-                "school" -> { prefs[SCHOOL_LINES] = csv; prefs[SCHOOL_LINES_TS] = now }
+                "home" -> { 
+                    prefs[HOME_LINES] = linesCsv
+                    prefs[HOME_STOPS] = namesPipe
+                    prefs[HOME_STOP_IDS] = idsPipe
+                    prefs[HOME_LINES_TS] = now 
+                }
+                "work" -> { 
+                    prefs[WORK_LINES] = linesCsv
+                    prefs[WORK_STOPS] = namesPipe
+                    prefs[WORK_STOP_IDS] = idsPipe
+                    prefs[WORK_LINES_TS] = now 
+                }
+                "school" -> { 
+                    prefs[SCHOOL_LINES] = linesCsv
+                    prefs[SCHOOL_STOPS] = namesPipe
+                    prefs[SCHOOL_STOP_IDS] = idsPipe
+                    prefs[SCHOOL_LINES_TS] = now 
+                }
             }
         }
     }

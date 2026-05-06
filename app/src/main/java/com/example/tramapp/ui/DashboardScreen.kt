@@ -54,6 +54,8 @@ fun DashboardScreen(
     val showTripPopup by viewModel.showTripPopup.collectAsState()
     val isTripLoading by viewModel.isTripLoading.collectAsState()
     val selectedTripDetails by viewModel.selectedTripDetails.collectAsState()
+    val throttleMessage by viewModel.throttleMessage.collectAsState()
+    val apiQueryCount by viewModel.apiQueryCount.collectAsState()
     
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(currentLocation, 15f)
@@ -83,7 +85,35 @@ fun DashboardScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp)
         ) {
-            HeaderSection()
+            HeaderSection(apiQueryCount)
+            
+            // API Throttle Banner
+            if (throttleMessage != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    color = Color.Red.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.Red,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = throttleMessage!!,
+                            color = Color.Red,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
             
             Text(
                 text = status,
@@ -243,7 +273,7 @@ fun DashboardScreen(
 }
 
 @Composable
-fun HeaderSection() {
+fun HeaderSection(queryCount: Int) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -252,6 +282,7 @@ fun HeaderSection() {
         Column {
             Text("Ahoj, Prague", color = TextSecondary, fontSize = 14.sp)
             Text("Find your tram", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+            Text("Debug: $queryCount API calls", color = AccentCyan.copy(alpha = 0.6f), fontSize = 12.sp)
         }
         Box(
             modifier = Modifier.size(48.dp).clip(CircleShape).background(SurfaceGlass),

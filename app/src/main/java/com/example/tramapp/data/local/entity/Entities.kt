@@ -9,8 +9,9 @@ data class StationEntity(
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val direction: String?, // NWES or terminal direction
-    val isFavorite: Boolean = false
+    val direction: String? = null,
+    val isFavorite: Boolean = false,
+    val lastUpdate: Long = 0
 )
 
 @Entity(tableName = "schedules")
@@ -21,4 +22,10 @@ data class ScheduleEntity(
     val destination: String,
     val expectedDepartureTime: Long, // timestamp
     val isRealTime: Boolean
+)
+@Entity(tableName = "trip_routes")
+data class TripRouteEntity(
+    @PrimaryKey val routeKey: String, // e.g. "8-Starý Hloubětín"
+    val stopIds: String, // Comma-separated stop names or IDs
+    val timestamp: Long
 )
