@@ -1,0 +1,12 @@
+{
+  "startup": [
+    {
+      "command": "cat project_summary.md"
+    }
+  ],
+  "post_task": [
+    {
+      "command": ./update_project_summary.sh
+    }
+  ]
+}
