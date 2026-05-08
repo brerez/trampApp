@@ -28,6 +28,8 @@ class DashboardViewModel @Inject constructor(
     private val locationStateManager: com.example.tramapp.domain.location.LocationStateManager
 ) : ViewModel() {
 
+    var ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
+
     val currentLocation: StateFlow<LatLng> = locationStateManager.activeLocation
     val isManualLocation: StateFlow<Boolean> = locationStateManager.isManual
 
@@ -221,7 +223,7 @@ class DashboardViewModel @Inject constructor(
         }
 
         // Periodic re-trigger every 30s to keep data fresh (increased from 15s)
-        viewModelScope.launch {
+        viewModelScope.launch(ioDispatcher) {
             while (true) {
                 kotlinx.coroutines.delay(30000)
                 val loc = currentLocation.value
@@ -258,7 +260,7 @@ class DashboardViewModel @Inject constructor(
                             prefs.displayRadius.coerceAtLeast(1500)
                         )
                         _currentNearbyStationIds.value = ids.toSet()
-                        _status.value = "Found ${ids.size} stations"
+                        _status.value = "Scan complete"
                     } catch (e: Exception) {
                         _status.value = "Error: ${e.message}"
                     }

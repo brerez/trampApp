@@ -137,8 +137,28 @@ class TramRepositoryTest {
 
         val ids = repository.refreshNearbyStations(50.0905, 14.4285, 1000)
 
-        // Should NOT use cache, should return API result
         assertEquals(1, ids.size)
         assertEquals("U_DL_1", ids[0])
+    }
+
+    @Test
+    fun `getDepartures should mark station as non-tram if it has departures but no trams`() = runTest {
+        val stopId = "U123"
+        val mockResponse = com.example.tramapp.data.remote.DepartureResponse(
+            departures = listOf(
+                com.example.tramapp.data.remote.DepartureItem(
+                    route = com.example.tramapp.data.remote.RouteInfo("100", 3), // 3 = Bus
+                    trip = com.example.tramapp.data.remote.TripInfo("Dest"),
+                    arrival = com.example.tramapp.data.remote.TimestampInfo("2026-05-08T23:00:00Z", null),
+                    stop = com.example.tramapp.data.remote.StopInfo(stopId)
+                )
+            )
+        )
+        whenever(apiService.getDepartures(stopId)).thenReturn(mockResponse)
+        
+        repository.getDepartures(stopId)
+        
+        // We expect it to update isTram to false!
+        verify(stationDao).updateIsTramStatus(stopId, false)
     }
 }

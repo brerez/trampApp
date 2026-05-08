@@ -42,20 +42,10 @@ class TramRepository @Inject constructor(
         throttleUtil.handleThrottle(e)
     }
 
-    private var lastRequestTime = 0L
-
     private suspend fun <T> withRetry(block: suspend () -> T): T {
         var retryCount = 0
         while (true) {
-            checkThrottle()
-            
-            // Rate Limiting: Ensure at least 300ms between requests to avoid bursts
-            val now = System.currentTimeMillis()
-            val elapsed = now - lastRequestTime
-            if (elapsed < 300) {
-                delay(300 - elapsed)
-            }
-            lastRequestTime = System.currentTimeMillis()
+            throttleUtil.waitForRateLimit()
 
             try {
                 _apiQueryCount.value++ // Increment debug counter
@@ -72,11 +62,25 @@ class TramRepository @Inject constructor(
 
     suspend fun refreshNearbyStations(lat: Double, lng: Double, radius: Int): List<String> {
         val existing = stationDao.getAllStations().first()
+        val now = System.currentTimeMillis()
+        val sixAmToday = java.time.ZonedDateTime.now()
+            .withHour(6).withMinute(0).withSecond(0).withNano(0)
+            .toInstant().toEpochMilli()
+
         val recentNearby = existing.filter { s: com.example.tramapp.data.local.entity.StationEntity ->
             val dLat = s.latitude - lat
             val dLng = s.longitude - lng
             val distSq = dLat * dLat + dLng * dLng
-            distSq < 0.000001 && (System.currentTimeMillis() - s.lastUpdate < 24 * 60 * 60 * 1000)
+            
+            val updateTime = java.time.Instant.ofEpochMilli(s.lastUpdate)
+                .atZone(java.time.ZoneId.systemDefault())
+            val hour = updateTime.hour
+            val isNightDecision = hour >= 23 || hour < 6 // 11 PM to 6 AM
+            
+            val isStale = s.isTram == false && isNightDecision && s.lastUpdate < sixAmToday && now >= sixAmToday
+            val isAllowed = s.isTram != false || isStale
+            
+            distSq < 0.000001 && (now - s.lastUpdate < 24 * 60 * 60 * 1000) && isAllowed
         }
         
         if (recentNearby.isNotEmpty()) {
@@ -113,6 +117,9 @@ class TramRepository @Inject constructor(
             val tramOnly = response.departures.filter { it.route.type == 0 }
             if (tramOnly.isNotEmpty()) {
                 saveDeparturesToCache(stopId, tramOnly)
+                stationDao.updateIsTramStatus(stopId, true)
+            } else if (response.departures.isNotEmpty()) {
+                stationDao.updateIsTramStatus(stopId, false)
             }
             tramOnly
         } catch (e: Exception) {

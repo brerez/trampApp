@@ -7,7 +7,7 @@ import com.example.tramapp.data.local.entity.*
 
 @Database(
     entities = [StationEntity::class, ScheduleEntity::class, DepartureEntity::class, TripRouteEntity::class, LineDirectionEntity::class], 
-    version = 7, 
+    version = 8, 
     exportSchema = false
 )
 abstract class TramDatabase : RoomDatabase() {

@@ -21,6 +21,9 @@ interface StationDao {
 
     @Query("SELECT * FROM stations WHERE isFavorite = 1")
     fun getFavoriteStations(): Flow<List<StationEntity>>
+
+    @Query("UPDATE stations SET isTram = :isTram WHERE id = :stationId")
+    suspend fun updateIsTramStatus(stationId: String, isTram: Boolean)
 }
 
 @Dao

@@ -90,7 +90,7 @@ fun DashboardScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp)
         ) {
-            HeaderSection(apiQueryCount, onSettingsClick = { showSettingsDialog = true })
+            HeaderSection(apiQueryCount, nearbyStations.size, onSettingsClick = { showSettingsDialog = true })
             
             // API Throttle Banner
             if (throttleMessage != null) {
@@ -211,16 +211,20 @@ fun DashboardScreen(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (isManualLocation) {
-                        FloatingActionButton(
-                            onClick = { viewModel.revertToGps() },
-                            containerColor = Color.DarkGray,
-                            contentColor = Color.White,
-                            shape = CircleShape,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(Icons.Default.LocationOn, contentDescription = "Back to GPS", modifier = Modifier.size(20.dp))
-                        }
+                    FloatingActionButton(
+                        onClick = { 
+                            if (isManualLocation) {
+                                viewModel.revertToGps()
+                            } else {
+                                viewModel.updateLocation(currentLocation, isManual = true)
+                            }
+                        },
+                        containerColor = if (!isManualLocation) AccentViolet else Color.DarkGray,
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Default.LocationOn, contentDescription = "Location Toggle", modifier = Modifier.size(20.dp))
                     }
 
                     FloatingActionButton(
@@ -238,8 +242,13 @@ fun DashboardScreen(
             // When the user stops dragging, update ViewModel with the new map center
             // isManual=true so the debounce-refresh runs and GPS doesn't snap back
             LaunchedEffect(cameraPositionState.isMoving) {
-                if (!cameraPositionState.isMoving && cameraPositionState.position.target != currentLocation) {
-                    viewModel.updateLocation(cameraPositionState.position.target, isManual = true)
+                if (!cameraPositionState.isMoving) {
+                    val dLat = cameraPositionState.position.target.latitude - currentLocation.latitude
+                    val dLng = cameraPositionState.position.target.longitude - currentLocation.longitude
+                    val distSq = dLat * dLat + dLng * dLng
+                    if (distSq > 0.0000001) { // Approx 30 meters
+                        viewModel.updateLocation(cameraPositionState.position.target, isManual = true)
+                    }
                 }
             }
 
@@ -321,16 +330,15 @@ fun DashboardScreen(
 }
 
 @Composable
-fun HeaderSection(queryCount: Int, onSettingsClick: () -> Unit) {
+fun HeaderSection(queryCount: Int, stationsCount: Int, onSettingsClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text("Ahoj, Prague", color = TextSecondary, fontSize = 14.sp)
             Text("Find your tram", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-            Text("Debug: $queryCount API calls", color = AccentCyan.copy(alpha = 0.6f), fontSize = 12.sp)
+            Text("Debug: $queryCount API calls, $stationsCount stations found", color = AccentCyan.copy(alpha = 0.6f), fontSize = 12.sp)
         }
         Box(
             modifier = Modifier

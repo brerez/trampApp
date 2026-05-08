@@ -11,7 +11,8 @@ data class StationEntity(
     val longitude: Double,
     val direction: String? = null,
     val isFavorite: Boolean = false,
-    val lastUpdate: Long = 0
+    val lastUpdate: Long = 0,
+    val isTram: Boolean? = null
 )
 
 @Entity(tableName = "schedules")
