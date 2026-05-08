@@ -1,6 +1,6 @@
 package com.example.tramapp.domain.location
 
-import android.location.Location
+import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,32 +10,33 @@ import javax.inject.Singleton
 @Singleton
 class LocationStateManager @Inject constructor() {
 
-    private val _currentGpsLocation = MutableStateFlow<Location?>(null)
-    private val _userSelectedLocation = MutableStateFlow<Location?>(null)
+    private val _currentGpsLocation = MutableStateFlow<LatLng?>(null)
+    private val _userSelectedLocation = MutableStateFlow<LatLng?>(null)
 
-    /**
-     * The location that should actually be used for display logic (fetching stations).
-     * This favors the user's manual selection if present, otherwise uses GPS.
-     */
-    val activeDisplayLocation: StateFlow<Location?>
-        get() = _userSelectedLocation.value?.let { MutableStateFlow(it) } ?: _currentGpsLocation.asStateFlow()
+    private val _activeLocation = MutableStateFlow(LatLng(50.0755, 14.4378))
+    val activeLocation: StateFlow<LatLng> = _activeLocation.asStateFlow()
 
-    fun updateGpsLocation(location: Location) {
-        _currentGpsLocation.value = location
+    private val _isManual = MutableStateFlow(false)
+    val isManual: StateFlow<Boolean> = _isManual.asStateFlow()
+
+    fun updateGpsLocation(latLng: LatLng) {
+        _currentGpsLocation.value = latLng
+        if (!_isManual.value) {
+            _activeLocation.value = latLng
+        }
     }
 
-    fun setUserSelectedLocation(latitude: Double, longitude: Double) {
-        val loc = Location("user_mock").apply {
-            this.latitude = latitude
-            this.longitude = longitude
-        }
-        _userSelectedLocation.value = loc
+    fun setUserSelectedLocation(latLng: LatLng) {
+        _userSelectedLocation.value = latLng
+        _isManual.value = true
+        _activeLocation.value = latLng
     }
 
     fun revertToGps() {
         _userSelectedLocation.value = null
+        _isManual.value = false
+        _currentGpsLocation.value?.let {
+            _activeLocation.value = it
+        }
     }
-
-    val isUsingMockedLocation: Boolean
-        get() = _userSelectedLocation.value != null
 }

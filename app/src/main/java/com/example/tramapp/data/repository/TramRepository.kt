@@ -28,29 +28,18 @@ class TramRepository @Inject constructor(
     private val tripFetchMutex = Mutex()
     private val ongoingTripFetches = mutableMapOf<String, Deferred<List<String>>>()
 
-    private val _throttleUntil = MutableStateFlow(0L)
-    val throttleUntil: StateFlow<Long> = _throttleUntil.asStateFlow()
+    private val throttleUtil = com.example.tramapp.utils.ThrottleUtil()
+    val throttleUntil: StateFlow<Long> = throttleUtil.throttleUntil
 
     private val _apiQueryCount = MutableStateFlow(0)
     val apiQueryCount: StateFlow<Int> = _apiQueryCount.asStateFlow()
 
-    private val throttleMutex = Mutex()
-
     private suspend fun checkThrottle() {
-        val now = System.currentTimeMillis()
-        if (now < _throttleUntil.value) {
-            val waitTime = _throttleUntil.value - now
-            println("🛑 API Throttled! Waiting ${waitTime}ms...")
-            delay(waitTime)
-        }
+        throttleUtil.checkThrottle()
     }
 
     private suspend fun handleThrottle(e: Exception) {
-        if (e is retrofit2.HttpException && e.code() == 429) {
-            throttleMutex.withLock {
-                _throttleUntil.value = System.currentTimeMillis() + 10000
-            }
-        }
+        throttleUtil.handleThrottle(e)
     }
 
     private var lastRequestTime = 0L

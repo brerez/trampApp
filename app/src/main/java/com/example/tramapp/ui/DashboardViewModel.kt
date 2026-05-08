@@ -24,14 +24,12 @@ class DashboardViewModel @Inject constructor(
     private val getSmartDepartures: GetSmartDeparturesUseCase,
     private val preferencesManager: UserPreferencesManager,
     private val destinationLineCache: com.example.tramapp.domain.DestinationLineCacheUseCase,
-    private val fusedLocationClient: com.google.android.gms.location.FusedLocationProviderClient
+    private val fusedLocationClient: com.google.android.gms.location.FusedLocationProviderClient,
+    private val locationStateManager: com.example.tramapp.domain.location.LocationStateManager
 ) : ViewModel() {
 
-    private val _currentLocation = MutableStateFlow(LatLng(50.0755, 14.4378))
-    val currentLocation: StateFlow<LatLng> = _currentLocation.asStateFlow()
-
-    private val _isManualLocation = MutableStateFlow(false)
-    val isManualLocation: StateFlow<Boolean> = _isManualLocation.asStateFlow()
+    val currentLocation: StateFlow<LatLng> = locationStateManager.activeLocation
+    val isManualLocation: StateFlow<Boolean> = locationStateManager.isManual
 
     private val _currentNearbyStationIds = MutableStateFlow<Set<String>>(emptySet())
 
@@ -103,8 +101,12 @@ class DashboardViewModel @Inject constructor(
             // Step 1: Load cached location FIRST — before anything else runs
             val prefs = preferencesManager.userPreferences.first()
             if (prefs.lastLat != null && prefs.lastLng != null) {
-                _currentLocation.value = LatLng(prefs.lastLat, prefs.lastLng)
-                _isManualLocation.value = prefs.isManualStartup
+                val latLng = LatLng(prefs.lastLat, prefs.lastLng)
+                if (prefs.isManualStartup) {
+                    locationStateManager.setUserSelectedLocation(latLng)
+                } else {
+                    locationStateManager.updateGpsLocation(latLng)
+                }
             }
 
             // Step 2: Instantly show cached departures from last run (~50ms, no network needed)
@@ -137,7 +139,7 @@ class DashboardViewModel @Inject constructor(
 
     /** Loads cached departures from Room and shows them immediately — no network call */
     private suspend fun loadCachedDepartures() {
-        val loc = _currentLocation.value
+        val loc = currentLocation.value
         val now = java.time.OffsetDateTime.now()
 
         val stationsSnapshot = repository.allStations.first()
@@ -228,7 +230,7 @@ class DashboardViewModel @Inject constructor(
                 .collect { (loc, prefs) ->
                     // Skip the hardcoded fallback default (Náměstí Míru) unless it is genuinely the cached location
                     val isUncachedDefault = loc.latitude == 50.0755 && loc.longitude == 14.4378
-                            && !_isManualLocation.value && prefs.lastLat == null
+                            && !locationStateManager.isManual.value && prefs.lastLat == null
                     if (isUncachedDefault) return@collect
 
                     _status.value = "Scanning [${String.format("%.4f", loc.latitude)}, ${String.format("%.4f", loc.longitude)}]..."
@@ -262,8 +264,11 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun updateLocation(latLng: LatLng, isManual: Boolean = true) {
-        _currentLocation.value = latLng
-        _isManualLocation.value = isManual
+        if (isManual) {
+            locationStateManager.setUserSelectedLocation(latLng)
+        } else {
+            locationStateManager.updateGpsLocation(latLng)
+        }
         // Cache this location and preference
         viewModelScope.launch {
             preferencesManager.updateLastLocation(latLng.latitude, latLng.longitude)
@@ -296,7 +301,7 @@ class DashboardViewModel @Inject constructor(
             },
             android.os.Looper.getMainLooper()
         )
-        _isManualLocation.value = false
+        locationStateManager.revertToGps()
     }
 
     fun refreshStation(stationId: String) {
