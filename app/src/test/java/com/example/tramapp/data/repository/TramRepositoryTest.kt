@@ -74,4 +74,71 @@ class TramRepositoryTest {
         assertEquals(2, ids.size)
         verify(stationDao).insertStations(any())
     }
+
+    @Test
+    fun `testDlouhaTridaTerminals should return both terminals`() = runTest {
+        val mockFeatures = listOf(
+            Feature(
+                geometry = Geometry(listOf(14.4285, 50.0905)),
+                properties = StopProperties(
+                    stopId = "U_DL_1",
+                    stopName = "Dlouhá třída",
+                    platformCode = "A",
+                    locationType = 0
+                )
+            ),
+            Feature(
+                geometry = Geometry(listOf(14.4286, 50.0906)),
+                properties = StopProperties(
+                    stopId = "U_DL_2",
+                    stopName = "Dlouhá třída",
+                    platformCode = "B",
+                    locationType = 0
+                )
+            )
+        )
+        val mockResponse = GolemioResponse(features = mockFeatures)
+
+        whenever(apiService.getStops(any(), any())).thenReturn(mockResponse)
+        whenever(stationDao.getAllStations()).thenReturn(kotlinx.coroutines.flow.flowOf(emptyList()))
+
+        val ids = repository.refreshNearbyStations(50.0905, 14.4285, 1000)
+
+        assertEquals(2, ids.size)
+        assertEquals(listOf("U_DL_1", "U_DL_2"), ids)
+    }
+
+    @Test
+    fun `refreshNearbyStations should fetch fresh data if cached station is far`() = runTest {
+        // Cache has one station far away (approx 500m)
+        val cachedStation = com.example.tramapp.data.local.entity.StationEntity(
+            id = "U_FAR",
+            name = "Far Station",
+            latitude = 50.0950, // 0.0045 degrees away
+            longitude = 14.4285,
+            lastUpdate = System.currentTimeMillis()
+        )
+        whenever(stationDao.getAllStations()).thenReturn(kotlinx.coroutines.flow.flowOf(listOf(cachedStation)))
+
+        // API returns Dlouha Trida
+        val mockFeatures = listOf(
+            Feature(
+                geometry = Geometry(listOf(14.4285, 50.0905)),
+                properties = StopProperties(
+                    stopId = "U_DL_1",
+                    stopName = "Dlouhá třída",
+                    platformCode = "A",
+                    locationType = 0
+                )
+            )
+        )
+        val mockResponse = GolemioResponse(features = mockFeatures)
+        whenever(apiService.getStops(any(), any())).thenReturn(mockResponse)
+
+        val ids = repository.refreshNearbyStations(50.0905, 14.4285, 1000)
+
+        // Should NOT use cache, should return API result
+        assertEquals(1, ids.size)
+        assertEquals("U_DL_1", ids[0])
+    }
 }

@@ -76,7 +76,7 @@ class TramRepository @Inject constructor(
             val dLat = s.latitude - lat
             val dLng = s.longitude - lng
             val distSq = dLat * dLat + dLng * dLng
-            distSq < 0.0001 && (System.currentTimeMillis() - s.lastUpdate < 24 * 60 * 60 * 1000)
+            distSq < 0.000001 && (System.currentTimeMillis() - s.lastUpdate < 24 * 60 * 60 * 1000)
         }
         
         if (recentNearby.isNotEmpty()) {
