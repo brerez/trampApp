@@ -33,8 +33,25 @@ class DashboardViewModel @Inject constructor(
 
     private val _currentNearbyStationIds = MutableStateFlow<Set<String>>(emptySet())
 
-    private val _stationDepartures = MutableStateFlow<Map<String, List<SmartDeparture>>>(emptyMap())
-    val stationDepartures: StateFlow<Map<String, List<SmartDeparture>>> = _stationDepartures.asStateFlow()
+    private val _rawStationDepartures = MutableStateFlow<Map<String, List<SmartDeparture>>>(emptyMap())
+    
+    val favorites: StateFlow<Set<String>> = preferencesManager.userPreferences.map { it.favorites }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+        
+    val favoritesFirst: StateFlow<Boolean> = preferencesManager.userPreferences.map { it.favoritesFirst }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val stationDepartures: StateFlow<Map<String, List<SmartDeparture>>> = combine(
+        _rawStationDepartures,
+        favorites,
+        favoritesFirst
+    ) { departures, favs, favsFirst ->
+        if (!favsFirst) return@combine departures
+        
+        departures.mapValues { (_, deps) ->
+            deps.sortedByDescending { favs.contains(it.item.route.shortName) }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val nearbyStations: StateFlow<List<StationEntity>> = combine(
         repository.allStations,
@@ -172,7 +189,7 @@ class DashboardViewModel @Inject constructor(
         }
 
         if (cachedMap.isNotEmpty()) {
-            _stationDepartures.value = cachedMap
+            _rawStationDepartures.value = cachedMap
             _status.value = "Showing cached data — refreshing..."
         }
     }
@@ -316,9 +333,9 @@ class DashboardViewModel @Inject constructor(
                 // PRIORITY 1: Get trams immediately (non-blocking)
                 val deps = getSmartDepartures.execute(stationId, prefs)
                 
-                val currentMap = _stationDepartures.value.toMutableMap()
+                val currentMap = _rawStationDepartures.value.toMutableMap()
                 currentMap[stationId] = deps.take(5)
-                _stationDepartures.value = currentMap
+                _rawStationDepartures.value = currentMap
 
                 // 3. Enrich with directional info (async, serial to avoid API limits)
                 enrichStation(stationId, stationName, deps.take(5), prefs)
@@ -360,9 +377,9 @@ class DashboardViewModel @Inject constructor(
             }
 
             if (anyChanged) {
-                val currentMap = _stationDepartures.value.toMutableMap()
+                val currentMap = _rawStationDepartures.value.toMutableMap()
                 currentMap[stationId] = updatedDeps
-                _stationDepartures.value = currentMap
+                _rawStationDepartures.value = currentMap
             }
             enrichmentJobs.remove(stationId)
         }
@@ -397,6 +414,18 @@ class DashboardViewModel @Inject constructor(
         // We keep _selectedTripDetails for a smooth exit animation if needed, 
         // or clear it immediately. Let's clear it to be safe.
         _selectedTripDetails.value = null
+    }
+
+    fun toggleFavorite(line: String) {
+        viewModelScope.launch {
+            preferencesManager.toggleFavorite(line)
+        }
+    }
+
+    fun updateFavoritesFirst(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesManager.updateFavoritesFirst(enabled)
+        }
     }
 
     /**

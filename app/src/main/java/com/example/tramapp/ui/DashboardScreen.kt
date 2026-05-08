@@ -58,6 +58,9 @@ fun DashboardScreen(
     val selectedTripDetails by viewModel.selectedTripDetails.collectAsState()
     val throttleMessage by viewModel.throttleMessage.collectAsState()
     val apiQueryCount by viewModel.apiQueryCount.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
+    val favoritesFirst by viewModel.favoritesFirst.collectAsState()
+    var showSettingsDialog by remember { mutableStateOf(false) }
     
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(currentLocation, 15f)
@@ -87,7 +90,7 @@ fun DashboardScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp)
         ) {
-            HeaderSection(apiQueryCount)
+            HeaderSection(apiQueryCount, onSettingsClick = { showSettingsDialog = true })
             
             // API Throttle Banner
             if (throttleMessage != null) {
@@ -279,11 +282,15 @@ fun DashboardScreen(
                         platformDepartures = platformDeps,
                         isExpanded = isExpanded,
                         isLoading = isAnyLoading,
+                        favorites = favorites,
                         onExpandToggle = {
                             expandedStations[index] = !isExpanded
                             if (!isExpanded && platformDeps.all { it.second.isEmpty() }) {
                                 viewModel.refreshStationGroup(platformIds)
                             }
+                        },
+                        onFavoriteClick = { line ->
+                            viewModel.toggleFavorite(line)
                         },
                         onTramClick = { tripId, routeName, destination ->
                             viewModel.selectTram(tripId, routeName, destination)
@@ -291,6 +298,16 @@ fun DashboardScreen(
                     )
                 }
             }
+        }
+
+        if (showSettingsDialog) {
+            com.example.tramapp.ui.components.SettingsDialog(
+                favorites = favorites,
+                favoritesFirst = favoritesFirst,
+                onToggleFavoritesFirst = { viewModel.updateFavoritesFirst(it) },
+                onRemoveFavorite = { viewModel.toggleFavorite(it) },
+                onDismiss = { showSettingsDialog = false }
+            )
         }
 
         if (showTripPopup) {
@@ -304,7 +321,7 @@ fun DashboardScreen(
 }
 
 @Composable
-fun HeaderSection(queryCount: Int) {
+fun HeaderSection(queryCount: Int, onSettingsClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -316,10 +333,14 @@ fun HeaderSection(queryCount: Int) {
             Text("Debug: $queryCount API calls", color = AccentCyan.copy(alpha = 0.6f), fontSize = 12.sp)
         }
         Box(
-            modifier = Modifier.size(48.dp).clip(CircleShape).background(SurfaceGlass),
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(SurfaceGlass)
+                .clickable { onSettingsClick() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Star, contentDescription = null, tint = Color.White)
+            Icon(Icons.Default.Star, contentDescription = "Settings", tint = Color.White)
         }
     }
 }

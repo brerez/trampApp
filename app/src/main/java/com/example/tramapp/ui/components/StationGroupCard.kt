@@ -31,7 +31,9 @@ fun StationGroupCard(
     platformDepartures: List<Pair<String, List<com.example.tramapp.domain.SmartDeparture>>>,
     isExpanded: Boolean,
     isLoading: Boolean,
+    favorites: Set<String>,
     onExpandToggle: () -> Unit,
+    onFavoriteClick: (String) -> Unit,
     onTramClick: (String, String, String) -> Unit
 ) {
     val allDeps = platformDepartures.flatMap { it.second }
@@ -121,14 +123,20 @@ fun StationGroupCard(
 
                 // Departure rows for this platform
                 departures.forEachIndexed { index, smartDeparture ->
-                    TramRow(smartDeparture) {
-                        val tripId = smartDeparture.item.trip.tripId ?: ""
-                        onTramClick(
-                            tripId, 
-                            smartDeparture.item.route.shortName, 
-                            smartDeparture.item.trip.headsign
-                        )
-                    }
+                    val lineName = smartDeparture.item.route.shortName
+                    TramRow(
+                        smartDeparture = smartDeparture,
+                        isFavorite = favorites.contains(lineName),
+                        onFavoriteClick = { onFavoriteClick(lineName) },
+                        onClick = {
+                            val tripId = smartDeparture.item.trip.tripId ?: ""
+                            onTramClick(
+                                tripId, 
+                                lineName, 
+                                smartDeparture.item.trip.headsign
+                            )
+                        }
+                    )
                     if (index < departures.size - 1) {
                         HorizontalDivider(color = GlassBorder, thickness = 0.5.dp, modifier = Modifier.padding(vertical = 10.dp))
                     }

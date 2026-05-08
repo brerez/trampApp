@@ -39,7 +39,9 @@ data class UserPreferences(
     val schoolStopIds: Set<String>,
     val homeLinesTimestamp: Long,
     val workLinesTimestamp: Long,
-    val schoolLinesTimestamp: Long
+    val schoolLinesTimestamp: Long,
+    val favorites: Set<String>,
+    val favoritesFirst: Boolean
 )
 
 @Singleton
@@ -75,6 +77,8 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
         private val HOME_LINES_TS = longPreferencesKey("home_lines_ts")
         private val WORK_LINES_TS = longPreferencesKey("work_lines_ts")
         private val SCHOOL_LINES_TS = longPreferencesKey("school_lines_ts")
+        private val FAVORITES = stringPreferencesKey("favorites")
+        private val FAVORITES_FIRST = booleanPreferencesKey("favorites_first")
 
         private const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000 // 7 days
     }
@@ -106,7 +110,9 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
             schoolStopIds = preferences[SCHOOL_STOP_IDS]?.split("|")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
             homeLinesTimestamp = preferences[HOME_LINES_TS] ?: 0L,
             workLinesTimestamp = preferences[WORK_LINES_TS] ?: 0L,
-            schoolLinesTimestamp = preferences[SCHOOL_LINES_TS] ?: 0L
+            schoolLinesTimestamp = preferences[SCHOOL_LINES_TS] ?: 0L,
+            favorites = preferences[FAVORITES]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            favoritesFirst = preferences[FAVORITES_FIRST] ?: false
         )
     }
 
@@ -182,5 +188,21 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
 
     suspend fun updateMaxStations(count: Int) {
         dataStore.edit { it[MAX_STATIONS] = count }
+    }
+
+    suspend fun toggleFavorite(line: String) {
+        dataStore.edit { prefs ->
+            val current = prefs[FAVORITES]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+            val updated = if (current.contains(line)) {
+                current - line
+            } else {
+                current + line
+            }
+            prefs[FAVORITES] = updated.joinToString(",")
+        }
+    }
+
+    suspend fun updateFavoritesFirst(enabled: Boolean) {
+        dataStore.edit { it[FAVORITES_FIRST] = enabled }
     }
 }

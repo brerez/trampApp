@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,7 +21,12 @@ import java.time.Duration
 import java.time.OffsetDateTime
 
 @Composable
-fun TramRow(smartDeparture: com.example.tramapp.domain.SmartDeparture, onClick: () -> Unit) {
+fun TramRow(
+    smartDeparture: com.example.tramapp.domain.SmartDeparture, 
+    isFavorite: Boolean,
+    onFavoriteClick: () -> Unit,
+    onClick: () -> Unit
+) {
     val tram = smartDeparture.item
     val isHomeBound = smartDeparture.isHomeBound
     val isWorkBound = smartDeparture.isWorkBound
@@ -80,11 +87,22 @@ fun TramRow(smartDeparture: com.example.tramapp.domain.SmartDeparture, onClick: 
             }
         }
 
-        Text(
-            timeText,
-            color = if (isHighlighted) accentColor else Color.White,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 16.sp
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Filled.Star,
+                contentDescription = "Favorite",
+                tint = if (isFavorite) Color.Yellow else Color.White.copy(alpha = 0.3f),
+                modifier = Modifier
+                    .clickable { onFavoriteClick() }
+                    .padding(8.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                timeText,
+                color = if (isHighlighted) accentColor else Color.White,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 16.sp
+            )
+        }
     }
 }
