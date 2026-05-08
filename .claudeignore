@@ -1,0 +1,28 @@
+# Tool specific
+.claude/
+.cline/
+.git/
+
+# Build directories
+build/
+app/build/
+.gradle/
+
+# IDE files
+.idea/
+*.iml
+
+# Local configuration
+local.properties
+
+# Logs and error reports
+*.log
+build_error.txt
+build_error_2.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gradle wrapper binaries
+gradle/wrapper/gradle-wrapper.jar
