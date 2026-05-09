@@ -88,7 +88,7 @@ class TramRepository @Inject constructor(
         }
 
         try {
-            val response = withRetry { apiService.getStops("$lat,$lng", limit = 100) }
+            val response = withRetry { apiService.getStops("$lat,$lng", limit = 500) }
             val stationEntities = response.features
                 .filter { it.properties.locationType == 0 }
                 .map { feature ->
