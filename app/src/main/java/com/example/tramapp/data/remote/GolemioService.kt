@@ -12,6 +12,11 @@ interface GolemioService {
         @Query("limit") limit: Int = 20
     ): GolemioResponse<StopProperties>
 
+    @GET("gtfs/stops")
+    suspend fun getStopById(
+        @Query("ids") stopId: String
+    ): GolemioResponse<StopProperties>
+
     @GET("pid/departureboards")
     suspend fun getDepartures(
         @Query("ids") stopId: String,

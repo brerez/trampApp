@@ -265,11 +265,31 @@ class TramRepository @Inject constructor(
     suspend fun getTripDetails(tripId: String, routeName: String, destination: String): com.example.tramapp.domain.TripDetails {
         val response = withRetry { apiService.getTripDetails(tripId) }
         val allStations = stationDao.getAllStations().first()
+        
+        // Find IDs that are missing names
+        val missingIds = response.stopTimes
+            .filter { it.stop?.stopName == null && allStations.none { s -> s.id == it.stopId } }
+            .map { it.stopId }
+            .distinct()
+            
+        val missingNamesMap = mutableMapOf<String, String>()
+        if (missingIds.isNotEmpty()) {
+            try {
+                // Try to fetch missing stops by ID
+                val stopsResponse = withRetry { apiService.getStopById(missingIds.joinToString(",")) }
+                stopsResponse.features.forEach { feature ->
+                    val platformLabel = feature.properties.platformCode?.let { " [$it]" } ?: ""
+                    missingNamesMap[feature.properties.stopId] = feature.properties.stopName + platformLabel
+                }
+            } catch (e: Exception) { /* ignore and fallback to ID */ }
+        }
+
         val stations = response.stopTimes.map { 
             val cachedName = allStations.find { s -> s.id == it.stopId }?.name
+            val fetchedName = missingNamesMap[it.stopId]
             com.example.tramapp.domain.TripStation(
                 id = it.stopId, 
-                name = it.stop?.stopName ?: cachedName ?: "Station ${it.stopId}", 
+                name = it.stop?.stopName ?: cachedName ?: fetchedName ?: "Station ${it.stopId}", 
                 sequence = it.stopSequence
             )
         }.sortedBy { it.sequence }
