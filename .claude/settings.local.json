@@ -29,7 +29,11 @@
       "PowerShell(.\\\\gradlew.bat test --rerun-tasks)",
       "Bash(Get-Content \"C:\\\\Users\\\\erezb\\\\git\\\\tramApp\\\\app\\\\src\\\\test\\\\java\\\\com\\\\example\\\\tramapp\\\\domain\\\\RealWorldBoundEdgeCaseTest.kt\" -Head 30)",
       "Bash(Select-String \"vystaviste\" -Context 0,1)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(grep -E \"\\\\.kt$\")",
+      "Bash(grep \"\\\\.kt$\")",
+      "Bash(chmod +x /tmp/scan_transcripts.sh)",
+      "Bash(bash /tmp/scan_transcripts.sh)"
     ]
   }
 }
