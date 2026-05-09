@@ -59,20 +59,25 @@ class DashboardViewModel @Inject constructor(
         repository.allStations,
         currentLocation,
         _currentNearbyStationIds,
-        stationDepartures
-    ) { all, loc, ids, deps ->
+        stationDepartures,
+        preferencesManager.userPreferences
+    ) { all, loc, ids, deps, prefs ->
         all.filter { station ->
-            // Prioritize stations from the latest API call
-            val isNearby = if (ids.isNotEmpty()) {
-                ids.contains(station.id)
+            // Calculate distance approximation in meters
+            val dLat = (station.latitude - loc.latitude) * 111000
+            val dLng = (station.longitude - loc.longitude) * 71000
+            val distSq = dLat * dLat + dLng * dLng
+            val maxDistSq = prefs.displayRadius * prefs.displayRadius
+            val isWithinRadius = distSq <= maxDistSq
+
+            // Prioritize stations from the latest API call, but keep showing ones with loaded departures to avoid blank screen during refresh
+            val shouldShow = if (ids.isNotEmpty()) {
+                (ids.contains(station.id) || deps.containsKey(station.id)) && isWithinRadius
             } else {
-                // Fallback to simple distance check (< 2km)
-                val dLat = station.latitude - loc.latitude
-                val dLng = station.longitude - loc.longitude
-                (dLat * dLat + dLng * dLng) < 0.0004 // Approx 2km squared
+                isWithinRadius
             }
 
-            if (!isNearby) return@filter false
+            if (!shouldShow) return@filter false
 
             // Only show if it has trams (if we've loaded its departures)
             if (deps.containsKey(station.id)) {
@@ -234,7 +239,7 @@ class DashboardViewModel @Inject constructor(
                 try {
                     val ids = repository.refreshNearbyStations(
                         loc.latitude, loc.longitude,
-                        prefs.displayRadius.coerceAtLeast(1500)
+                        prefs.displayRadius
                     )
                     if (ids.isNotEmpty()) _currentNearbyStationIds.value = ids.toSet()
                 } catch (e: Exception) { /* ignore */ }
@@ -246,21 +251,17 @@ class DashboardViewModel @Inject constructor(
         // Automatically refresh when location changes (Debounced)
         viewModelScope.launch {
             currentLocation
-                .debounce(5000)
+                .debounce(2000) // Reduced from 5000 to make startup faster
                 .distinctUntilChanged()
                 .combine(preferencesManager.userPreferences) { loc, prefs -> loc to prefs }
                 .collect { (loc, prefs) ->
-                    // Skip the hardcoded fallback default (Náměstí Míru) unless it is genuinely the cached location
-                    val isUncachedDefault = loc.latitude == 50.0755 && loc.longitude == 14.4378
-                            && !locationStateManager.isManual.value && prefs.lastLat == null
-                    if (isUncachedDefault) return@collect
-
+                    // Load data even for the default location to avoid blank screen on clean start
                     _status.value = "Scanning [${String.format("%.4f", loc.latitude)}, ${String.format("%.4f", loc.longitude)}]..."
                     try {
                         val ids = repository.refreshNearbyStations(
                             loc.latitude,
                             loc.longitude,
-                            prefs.displayRadius.coerceAtLeast(1500)
+                            prefs.displayRadius
                         )
                         _currentNearbyStationIds.value = ids.toSet()
                         _status.value = "Scan complete"
@@ -307,6 +308,17 @@ class DashboardViewModel @Inject constructor(
             preferencesManager.updateIsManualStartup(false)
         }
         
+        // Try to get last location immediately for faster startup
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    updateLocation(LatLng(location.latitude, location.longitude), isManual = false)
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore permission or initialization errors here
+        }
+        
         val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
             com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, 1000
         ).build()
@@ -315,8 +327,9 @@ class DashboardViewModel @Inject constructor(
             locationRequest,
             object : com.google.android.gms.location.LocationCallback() {
                 override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-                    result.lastLocation?.let {
-                        updateLocation(LatLng(it.latitude, it.longitude), isManual = false)
+                    val location = result.lastLocation
+                    if (location != null) {
+                        updateLocation(LatLng(location.latitude, location.longitude), isManual = false)
                         fusedLocationClient.removeLocationUpdates(this)
                     }
                 }
@@ -359,7 +372,6 @@ class DashboardViewModel @Inject constructor(
             val loc = currentLocation.value
             val updatedDeps = departures.toMutableList()
             var anyChanged = false
-
             for (i in updatedDeps.indices) {
                 ensureActive()
                 val smartDep = updatedDeps[i]

@@ -264,8 +264,14 @@ class TramRepository @Inject constructor(
 
     suspend fun getTripDetails(tripId: String, routeName: String, destination: String): com.example.tramapp.domain.TripDetails {
         val response = withRetry { apiService.getTripDetails(tripId) }
+        val allStations = stationDao.getAllStations().first()
         val stations = response.stopTimes.map { 
-            com.example.tramapp.domain.TripStation(id = it.stopId, name = it.stop?.stopName ?: "Station ${it.stopId}", sequence = it.stopSequence)
+            val cachedName = allStations.find { s -> s.id == it.stopId }?.name
+            com.example.tramapp.domain.TripStation(
+                id = it.stopId, 
+                name = it.stop?.stopName ?: cachedName ?: "Station ${it.stopId}", 
+                sequence = it.stopSequence
+            )
         }.sortedBy { it.sequence }
         val polyline = response.shapes.map { feature ->
             com.google.android.gms.maps.model.LatLng(feature.geometry.coordinates[1], feature.geometry.coordinates[0])

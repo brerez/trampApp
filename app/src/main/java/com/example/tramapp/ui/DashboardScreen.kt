@@ -70,14 +70,8 @@ fun DashboardScreen(
     }
 
     LaunchedEffect(currentLocation) {
-        try {
-            cameraPositionState.animate(
-                com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(currentLocation, 15f)
-            )
-        } catch (e: Exception) {
-            // Fallback if CameraUpdateFactory is not initialized yet
-            cameraPositionState.position = com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(currentLocation, 15f)
-        }
+        // Snap position directly to avoid animation failures or race conditions on start
+        cameraPositionState.position = com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(currentLocation, 15f)
     }
 
     LaunchedEffect(cameraPositionState.isMoving) {
