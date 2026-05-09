@@ -25,7 +25,8 @@ class DashboardViewModel @Inject constructor(
     private val preferencesManager: UserPreferencesManager,
     private val destinationLineCache: com.example.tramapp.domain.DestinationLineCacheUseCase,
     private val fusedLocationClient: com.google.android.gms.location.FusedLocationProviderClient,
-    private val locationStateManager: com.example.tramapp.domain.location.LocationStateManager
+    private val locationStateManager: com.example.tramapp.domain.location.LocationStateManager,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
 
     var ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
@@ -154,12 +155,10 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             kotlinx.coroutines.delay(2000)
             try {
-                println("🔍 DashboardViewModel: Starting destination cache refresh...")
                 val prefs = preferencesManager.userPreferences.first()
                 destinationLineCache.refreshIfNeeded(prefs)
-                println("🔍 DashboardViewModel: Destination cache refresh completed.")
             } catch (e: Exception) {
-                println("❌ DashboardViewModel: Cache refresh failed: ${e.message}")
+                android.util.Log.w("DashboardViewModel", "Cache refresh failed", e)
             }
         }
     }
@@ -242,7 +241,9 @@ class DashboardViewModel @Inject constructor(
                         prefs.displayRadius
                     )
                     if (ids.isNotEmpty()) _currentNearbyStationIds.value = ids.toSet()
-                } catch (e: Exception) { /* ignore */ }
+                } catch (e: Exception) { 
+                    android.util.Log.w("DashboardViewModel", "Failed to update nearby stations in background", e)
+                }
             }
         }
     }
@@ -354,11 +355,29 @@ class DashboardViewModel @Inject constructor(
                 val currentMap = _rawStationDepartures.value.toMutableMap()
                 currentMap[stationId] = deps.take(5)
                 _rawStationDepartures.value = currentMap
+                
+                // Show toast only if ALL platforms for this station are empty
+                val allStations = repository.allStations.first()
+                val currentStation = allStations.find { it.id == stationId }
+                val baseName = currentStation?.name?.replace(Regex("\\s*\\[.*]$"), "")?.trim() ?: "Unknown"
+                
+                val siblingPlatforms = allStations.filter { 
+                    it.name.replace(Regex("\\s*\\[.*]$"), "").trim() == baseName 
+                }
+                
+                val allEmpty = siblingPlatforms.isNotEmpty() && siblingPlatforms.all { platform ->
+                    val platformDeps = currentMap[platform.id]
+                    platformDeps != null && platformDeps.isEmpty()
+                }
+                
+                if (allEmpty) {
+                    android.widget.Toast.makeText(context, "Station $baseName has no trams, removing from list", android.widget.Toast.LENGTH_SHORT).show()
+                }
 
                 // 3. Enrich with directional info (async, serial to avoid API limits)
                 enrichStation(stationId, stationName, deps.take(5), prefs)
             } catch (e: Exception) {
-                // Silently fail
+                android.util.Log.w("DashboardViewModel", "Failed to refresh station $stationId", e)
             } finally {
                 _loadingStations.value -= stationId
                 stationJobs.remove(stationId)
@@ -369,7 +388,7 @@ class DashboardViewModel @Inject constructor(
     private fun enrichStation(stationId: String, stationName: String, departures: List<SmartDeparture>, prefs: com.example.tramapp.data.local.datastore.UserPreferences) {
         enrichmentJobs[stationId]?.cancel()
         enrichmentJobs[stationId] = viewModelScope.launch {
-            val loc = currentLocation.value
+            val loc = currentLocation.value ?: return@launch
             val updatedDeps = departures.toMutableList()
             var anyChanged = false
             for (i in updatedDeps.indices) {
@@ -389,7 +408,7 @@ class DashboardViewModel @Inject constructor(
                     kotlinx.coroutines.delay(150)
                 } catch (e: Exception) { 
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    /* skip */ 
+                    android.util.Log.w("DashboardViewModel", "Failed to check bounds for departure", e)
                 }
             }
 
@@ -414,8 +433,9 @@ class DashboardViewModel @Inject constructor(
         tripFetchJob?.cancel()
         tripFetchJob = viewModelScope.launch {
             try {
-                val details = repository.getTripDetails(tripId, routeName, destination)
-                _selectedTripDetails.value = details
+                repository.getTripDetailsFlow(tripId, routeName, destination).collect { details ->
+                    _selectedTripDetails.value = details
+                }
             } catch (e: Exception) {
                 // Handle error
             } finally {

@@ -48,6 +48,9 @@ class DashboardViewModelTest {
     @Mock
     lateinit var locationStateManager: LocationStateManager
 
+    @Mock
+    lateinit var context: android.content.Context
+
     private val testDispatcher = StandardTestDispatcher()
 
     private val defaultPrefs = UserPreferences(
@@ -121,7 +124,8 @@ class DashboardViewModelTest {
             preferencesManager,
             destinationLineCache,
             fusedLocationClient,
-            locationStateManager
+            locationStateManager,
+            context
         )
         
         // Subscribe to flow to trigger stateIn

@@ -33,12 +33,15 @@ class TramRepositoryTest {
     @Mock
     lateinit var lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
 
+    @Mock
+    lateinit var throttleUtil: com.example.tramapp.utils.ThrottleUtil
+
     lateinit var repository: TramRepository
 
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
-        repository = TramRepository(apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao)
+        repository = TramRepository(apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao, throttleUtil)
     }
 
     @Test

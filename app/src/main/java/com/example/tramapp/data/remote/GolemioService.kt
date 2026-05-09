@@ -17,6 +17,11 @@ interface GolemioService {
         @Query("ids") stopId: String
     ): GolemioResponse<StopProperties>
 
+    @GET("gtfs/stops")
+    suspend fun getStopsByIds(
+        @Query("ids[]") ids: List<String>
+    ): GolemioResponse<StopProperties>
+
     @GET("pid/departureboards")
     suspend fun getDepartures(
         @Query("ids") stopId: String,

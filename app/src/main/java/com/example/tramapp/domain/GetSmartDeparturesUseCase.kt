@@ -4,6 +4,7 @@ import com.example.tramapp.data.local.datastore.UserPreferences
 import com.example.tramapp.data.remote.DepartureItem
 import com.example.tramapp.data.repository.TramRepository
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.text.Normalizer
@@ -101,19 +102,38 @@ class GetSmartDeparturesUseCase @Inject constructor(
     ): Boolean {
         if (tripId == null) return false
         
-        val routeIds = repository.getTripSequence(lineName, headsign, tripId)
+        val routePairs = repository.getTripSequence(lineName, headsign, tripId)
         
-        if (routeIds.isEmpty()) return false
+        if (routePairs.isEmpty()) return false
 
-        // Matching by Stop ID (Most reliable and the only one supported by API now)
+        val routeIds = routePairs.map { it.first }
+        val routeNames = routePairs.map { it.second.replace(Regex("\\s*\\[.*]$"), "").trim() }
+
+        // Matching by Stop ID with Name Fallback
         if (currentStopId.isNotEmpty() && destinationIds.isNotEmpty()) {
-            val currentIndex = routeIds.indexOfFirst { it == currentStopId }
-            if (currentIndex != -1) {
-                val isBound = destinationIds.any { destId ->
-                    val destIndex = routeIds.indexOfFirst { it == destId }
-                    destIndex > currentIndex
+            fun getBaseStopId(id: String): String = id.split("Z")[0]
+            
+            val currentBaseId = getBaseStopId(currentStopId)
+            val currentIndex = routeIds.indexOfFirst { getBaseStopId(it) == currentBaseId }
+            
+            val normalizedStationName = stationName.replace(Regex("\\s*\\[.*]$"), "").trim()
+            val finalCurrentIndex = if (currentIndex != -1) currentIndex else routeNames.indexOfFirst { it == normalizedStationName }
+            
+            if (finalCurrentIndex != -1) {
+                // Check if any destination is AFTER current index
+                val hasDestinationAfter = destinationIds.any { destId ->
+                    val destBaseId = getBaseStopId(destId)
+                    val destIndex = routeIds.indexOfFirst { getBaseStopId(it) == destBaseId }
+                    destIndex > finalCurrentIndex
                 }
                 
+                val hasDestinationByNameAfter = if (hasDestinationAfter) true else destinationNames.any { destName ->
+                    val normalizedDestName = destName.replace(Regex("\\s*\\[.*]$"), "").trim()
+                    val destIndex = routeNames.indexOfFirst { it == normalizedDestName }
+                    destIndex > finalCurrentIndex
+                }
+                
+                val isBound = hasDestinationAfter || hasDestinationByNameAfter
                 repository.saveDirection(stationName, lineName, headsign, destType, isBound)
                 return isBound
             }

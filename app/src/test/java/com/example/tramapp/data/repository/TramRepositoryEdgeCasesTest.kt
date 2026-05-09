@@ -3,6 +3,7 @@ package com.example.tramapp.data.repository
 import com.example.tramapp.data.local.dao.*
 import com.example.tramapp.data.local.entity.*
 import com.example.tramapp.data.remote.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
@@ -33,13 +34,16 @@ class TramRepositoryEdgeCasesTest {
     @Mock
     lateinit var lineDirectionDao: LineDirectionDao
 
+    @Mock
+    lateinit var throttleUtil: com.example.tramapp.utils.ThrottleUtil
+
     private lateinit var repository: TramRepository
 
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
         repository = TramRepository(
-            apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao
+            apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao, throttleUtil
         )
         whenever(stationDao.getAllStations()).thenReturn(kotlinx.coroutines.flow.flowOf(emptyList()))
     }
@@ -209,7 +213,7 @@ class TramRepositoryEdgeCasesTest {
 
         whenever(apiService.getTripDetails(any(), any(), any())).thenReturn(mockResponse)
 
-        val result = repository.getTripDetails("TEST_TRIP", "8", "Starý Hloubětín")
+        val result = repository.getTripDetailsFlow("TEST_TRIP", "8", "Starý Hloubětín").first()
 
         assertNotNull(result)
         assertTrue(result.stations.isEmpty())
@@ -225,7 +229,7 @@ class TramRepositoryEdgeCasesTest {
 
         whenever(apiService.getTripDetails(any(), any(), any())).thenReturn(mockResponse)
 
-        val result = repository.getTripDetails("TEST_TRIP", "8", "Starý Hloubětín")
+        val result = repository.getTripDetailsFlow("TEST_TRIP", "8", "Starý Hloubětín").first()
 
         assertNotNull(result)
     }
@@ -246,7 +250,7 @@ class TramRepositoryEdgeCasesTest {
 
         whenever(apiService.getTripDetails(any(), any(), any())).thenReturn(mockResponse)
 
-        val result = repository.getTripDetails("TEST_TRIP", "8", "Starý Hloubětín")
+        val result = repository.getTripDetailsFlow("TEST_TRIP", "8", "Starý Hloubětín").first()
 
         assertNotNull(result)
         assertEquals(1, result.stations.size)
@@ -268,7 +272,7 @@ class TramRepositoryEdgeCasesTest {
 
         whenever(apiService.getTripDetails(any(), any(), any())).thenReturn(mockResponse)
 
-        val result = repository.getTripDetails("TEST_TRIP", "8", "Starý Hloubětín")
+        val result = repository.getTripDetailsFlow("TEST_TRIP", "8", "Starý Hloubětín").first()
 
         assertNotNull(result)
     }
@@ -279,7 +283,7 @@ class TramRepositoryEdgeCasesTest {
             RuntimeException("API exception")
         )
 
-        val result = runCatching { repository.getTripDetails("TEST_TRIP", "8", "Starý Hloubětín") }
+        val result = runCatching { repository.getTripDetailsFlow("TEST_TRIP", "8", "Starý Hloubětín").first() }
 
         assertTrue(result.isFailure)
         assertEquals("API exception", result.exceptionOrNull()?.message)

@@ -33,13 +33,16 @@ class TramRepositoryNightTimeFilteringTest {
     @Mock
     lateinit var lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
 
+    @Mock
+    lateinit var throttleUtil: com.example.tramapp.utils.ThrottleUtil
+
     private lateinit var repository: TramRepository
 
     @Before
     fun setUp() {
         MockitoAnnotations.openMocks(this)
         repository = TramRepository(
-            apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao
+            apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao, throttleUtil
         )
     }
 

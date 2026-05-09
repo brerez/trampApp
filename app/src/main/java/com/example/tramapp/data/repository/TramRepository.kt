@@ -23,12 +23,11 @@ class TramRepository @Inject constructor(
     private val stationDao: StationDao,
     private val departureDao: com.example.tramapp.data.local.dao.DepartureDao,
     private val tripRouteDao: TripRouteDao,
-    private val lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
+    private val lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao,
+    private val throttleUtil: com.example.tramapp.utils.ThrottleUtil
 ) {
     private val tripFetchMutex = Mutex()
-    private val ongoingTripFetches = mutableMapOf<String, Deferred<List<String>>>()
-
-    private val throttleUtil = com.example.tramapp.utils.ThrottleUtil()
+    private val ongoingTripFetches = mutableMapOf<String, Deferred<List<Pair<String, String>>>>()
     val throttleUntil: StateFlow<Long> = throttleUtil.throttleUntil
 
     private val _apiQueryCount = MutableStateFlow(0)
@@ -45,8 +44,6 @@ class TramRepository @Inject constructor(
     private suspend fun <T> withRetry(block: suspend () -> T): T {
         var retryCount = 0
         while (true) {
-            throttleUtil.waitForRateLimit()
-
             try {
                 _apiQueryCount.value++ // Increment debug counter
                 return block()
@@ -88,7 +85,7 @@ class TramRepository @Inject constructor(
         }
 
         try {
-            val response = withRetry { apiService.getStops("$lat,$lng", limit = 500) }
+            val response = withRetry { apiService.getStops("$lat,$lng", limit = 1000) }
             val stationEntities = response.features
                 .filter { it.properties.locationType == 0 }
                 .map { feature ->
@@ -112,19 +109,15 @@ class TramRepository @Inject constructor(
     }
 
     suspend fun getDepartures(stopId: String): List<DepartureItem> {
-        return try {
-            val response = withRetry { apiService.getDepartures(stopId) }
-            val tramOnly = response.departures.filter { it.route.type == 0 }
-            if (tramOnly.isNotEmpty()) {
-                saveDeparturesToCache(stopId, tramOnly)
-                stationDao.updateIsTramStatus(stopId, true)
-            } else if (response.departures.isNotEmpty()) {
-                stationDao.updateIsTramStatus(stopId, false)
-            }
-            tramOnly
-        } catch (e: Exception) {
-            emptyList()
+        val response = withRetry { apiService.getDepartures(stopId) }
+        val tramOnly = response.departures.filter { it.route.type == 0 }
+        if (tramOnly.isNotEmpty()) {
+            saveDeparturesToCache(stopId, tramOnly)
+            stationDao.updateIsTramStatus(stopId, true)
+        } else if (response.departures.isNotEmpty()) {
+            stationDao.updateIsTramStatus(stopId, false)
         }
+        return tramOnly
     }
 
     private suspend fun saveDeparturesToCache(stopId: String, departures: List<DepartureItem>) {
@@ -159,18 +152,24 @@ class TramRepository @Inject constructor(
         stationDao.updateFavoriteStatus(stationId, isFavorite)
     }
 
-    suspend fun getTripSequence(lineName: String, headsign: String, tripId: String): List<String> {
+    suspend fun getTripSequence(lineName: String, headsign: String, tripId: String): List<Pair<String, String>> {
         val routeKey = "$lineName-$headsign"
         // 1. Check Room Cache by RouteKey
         val cached = tripRouteDao.getTripRoute(routeKey)
         if (cached != null && System.currentTimeMillis() - cached.timestamp < 24 * 60 * 60 * 1000) {
-            if (cached.stopIds == "EMPTY") return emptyList()
-            // Support legacy format if it exists, or new format
-            if (cached.stopIds.contains("||ID:")) {
-                val parts = cached.stopIds.split("||ID:")
-                return parts[1].split("|")
+            if (cached.stopIds == "EMPTY") {
+                return emptyList()
             }
-            return cached.stopIds.split("|")
+            
+            if (cached.stopIds.contains("||NAMES:")) {
+                val parts = cached.stopIds.split("||NAMES:")
+                val ids = parts[0].split("|")
+                val names = parts[1].split("|")
+                return ids.mapIndexed { index, id -> id to names.getOrElse(index) { "" } }
+            }
+            
+            // If it's old cache without names, don't use it!
+            // Fall through to network fetch to migrate the cache.
         }
 
         // 2. Network Fetch (Atomic per RouteKey)
@@ -181,10 +180,17 @@ class TramRepository @Inject constructor(
                     val sorted = response.stopTimes.sortedBy { it.stopSequence }
                     val ids = sorted.map { it.stopId }
                     
+                    // Fetch names for all IDs to support fallback matching
+                    val namesResponse = withRetry { apiService.getStopsByIds(ids) }
+                    val nameMap = namesResponse.features.associate { it.properties.stopId to it.properties.stopName }
+                    val names = ids.map { nameMap[it] ?: "" }
+                    
+                    val stopIdsString = ids.joinToString("|") + "||NAMES:" + names.joinToString("|")
+                    
                     tripRouteDao.insertTripRoute(
                         TripRouteEntity(
                             routeKey = routeKey,
-                            stopIds = ids.joinToString("|"),
+                            stopIds = stopIdsString,
                             timestamp = System.currentTimeMillis()
                         )
                     )
@@ -199,9 +205,9 @@ class TramRepository @Inject constructor(
                             )
                         )
                     }
-                    ids
+                    ids.mapIndexed { index, id -> id to names.getOrElse(index) { "" } }
                 } catch (e: Exception) {
-                    emptyList<String>()
+                    emptyList<Pair<String, String>>()
                 } finally {
                     tripFetchMutex.withLock { ongoingTripFetches.remove(routeKey) }
                 }
@@ -246,7 +252,9 @@ class TramRepository @Inject constructor(
                 stopNames.add(baseName)
                 stopIds.add(stop.properties.stopId)
             }
-        } catch (e: Exception) { /* skip */ }
+        } catch (e: Exception) { 
+            android.util.Log.w("TramRepository", "Failed to fetch nearby stops in getNearbyInfo", e)
+        }
         return NearbyInfo(emptySet(), stopNames, stopIds)
     }
 
@@ -262,9 +270,25 @@ class TramRepository @Inject constructor(
         )
     }
 
-    suspend fun getTripDetails(tripId: String, routeName: String, destination: String): com.example.tramapp.domain.TripDetails {
+    fun getTripDetailsFlow(tripId: String, routeName: String, destination: String): kotlinx.coroutines.flow.Flow<com.example.tramapp.domain.TripDetails> = kotlinx.coroutines.flow.flow {
         val response = withRetry { apiService.getTripDetails(tripId) }
         val allStations = stationDao.getAllStations().first()
+        
+        val initialStations = response.stopTimes.map { 
+            val cachedName = allStations.find { s -> s.id == it.stopId }?.name
+            com.example.tramapp.domain.TripStation(
+                id = it.stopId, 
+                name = it.stop?.stopName ?: cachedName ?: "Station ${it.stopId}", 
+                sequence = it.stopSequence
+            )
+        }.sortedBy { it.sequence }
+        
+        val polyline = response.shapes.map { feature ->
+            com.google.android.gms.maps.model.LatLng(feature.geometry.coordinates[1], feature.geometry.coordinates[0])
+        }
+        
+        val initialDetails = com.example.tramapp.domain.TripDetails(tripId, routeName, destination, initialStations, polyline)
+        emit(initialDetails) // Emit initial state with IDs!
         
         // Find IDs that are missing names
         val missingIds = response.stopTimes
@@ -272,30 +296,48 @@ class TramRepository @Inject constructor(
             .map { it.stopId }
             .distinct()
             
-        val missingNamesMap = mutableMapOf<String, String>()
         if (missingIds.isNotEmpty()) {
-            try {
-                // Try to fetch missing stops by ID
-                val stopsResponse = withRetry { apiService.getStopById(missingIds.joinToString(",")) }
-                stopsResponse.features.forEach { feature ->
-                    val platformLabel = feature.properties.platformCode?.let { " [$it]" } ?: ""
-                    missingNamesMap[feature.properties.stopId] = feature.properties.stopName + platformLabel
+            val missingNamesMap = mutableMapOf<String, String>()
+            // Try to fetch missing stops by ID one by one
+            missingIds.forEach { id ->
+                try {
+                    val stopsResponse = withRetry { apiService.getStopById(id) }
+                    stopsResponse.features.firstOrNull()?.let { feature ->
+                        val platformLabel = feature.properties.platformCode?.let { " [$it]" } ?: ""
+                        val name = feature.properties.stopName + platformLabel
+                        missingNamesMap[feature.properties.stopId] = name
+                        
+                        // Cache it in local database
+                        stationDao.insertStations(
+                            listOf(
+                                com.example.tramapp.data.local.entity.StationEntity(
+                                    id = feature.properties.stopId,
+                                    name = name,
+                                    latitude = feature.geometry.coordinates[1],
+                                    longitude = feature.geometry.coordinates[0],
+                                    lastUpdate = System.currentTimeMillis(),
+                                    isTram = true
+                                )
+                            )
+                        )
+                    }
+                } catch (e: Exception) { 
+                    android.util.Log.w("TramRepository", "Failed to resolve name for missing stop in getTripStations", e)
                 }
-            } catch (e: Exception) { /* ignore and fallback to ID */ }
+            }
+            
+            // Emit updated state!
+            val updatedStations = response.stopTimes.map { 
+                val cachedName = allStations.find { s -> s.id == it.stopId }?.name
+                val fetchedName = missingNamesMap[it.stopId]
+                com.example.tramapp.domain.TripStation(
+                    id = it.stopId, 
+                    name = it.stop?.stopName ?: cachedName ?: fetchedName ?: "Station ${it.stopId}", 
+                    sequence = it.stopSequence
+                )
+            }.sortedBy { it.sequence }
+            
+            emit(initialDetails.copy(stations = updatedStations))
         }
-
-        val stations = response.stopTimes.map { 
-            val cachedName = allStations.find { s -> s.id == it.stopId }?.name
-            val fetchedName = missingNamesMap[it.stopId]
-            com.example.tramapp.domain.TripStation(
-                id = it.stopId, 
-                name = it.stop?.stopName ?: cachedName ?: fetchedName ?: "Station ${it.stopId}", 
-                sequence = it.stopSequence
-            )
-        }.sortedBy { it.sequence }
-        val polyline = response.shapes.map { feature ->
-            com.google.android.gms.maps.model.LatLng(feature.geometry.coordinates[1], feature.geometry.coordinates[0])
-        }
-        return com.example.tramapp.domain.TripDetails(tripId, routeName, destination, stations, polyline)
     }
 }

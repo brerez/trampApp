@@ -59,13 +59,61 @@ class GetSmartDeparturesUseCaseTest {
 
         coEvery { repository.getCachedDirection(any(), any(), any(), any()) } returns null
         coEvery { repository.saveDirection(any(), any(), any(), any(), any()) } just Runs
-        coEvery { repository.getTripSequence(any(), any(), any()) } returns listOf(stationId, "U456Z1P")
+        coEvery { repository.getTripSequence(any(), any(), any()) } returns listOf(stationId to "Kamenická", "U456Z1P" to "Křižíkova")
 
         // Act
         val bounds = useCase.checkBounds(departure, "Kamenická", preferences, currentLat, currentLng)
 
         // Assert
         assertTrue("Should be work bound", bounds.second)
+    }
+
+    @Test
+    fun `checkBounds should fail for Letenske namesti when IDs mismatch and fallback to name fails`() = runBlocking {
+        // Mock Location
+        mockkStatic(android.location.Location::class)
+        every { android.location.Location.distanceBetween(any(), any(), any(), any(), any()) } answers {
+            val results = arg<FloatArray>(4)
+            results[0] = 1000f // Distance > 500m
+        }
+        
+        val currentStopId = "U123Z1P" // Letenské náměstí
+        val destStopId = "U456Z1P" // Riverside
+        
+        val preferences = mockk<UserPreferences> {
+            coEvery { homeLat } returns null
+            coEvery { homeLng } returns null
+            coEvery { workLat } returns null
+            coEvery { workLng } returns null
+            coEvery { schoolLat } returns 50.1296
+            coEvery { schoolLng } returns 14.3987
+            coEvery { homeStopNames } returns emptySet()
+            coEvery { workStopNames } returns emptySet()
+            coEvery { schoolStopNames } returns setOf("Hradčanská")
+            coEvery { homeStopIds } returns emptySet()
+            coEvery { workStopIds } returns emptySet()
+            coEvery { schoolStopIds } returns setOf(destStopId)
+        }
+        
+        val departure = createDeparture("25", "Bílá Hora", "trip25", currentStopId)
+        
+        coEvery { repository.getCachedDirection(any(), any(), any(), any()) } returns null
+        coEvery { repository.saveDirection(any(), any(), any(), any(), any()) } just Runs
+        
+        // Simulate API returning IDs without 'U' and different format!
+        coEvery { repository.getTripSequence(any(), any(), any()) } returns listOf("123" to "Letenské náměstí", "456" to "Hradčanská")
+        
+        // Mock allStations StateFlow
+        val stationList = listOf(
+            com.example.tramapp.data.local.entity.StationEntity(currentStopId, "Letenské náměstí [A]", 50.1, 14.4, null, false, 0, true),
+            com.example.tramapp.data.local.entity.StationEntity(destStopId, "Hradčanská [A]", 50.2, 14.3, null, false, 0, true)
+        )
+        val allStationsFlow = kotlinx.coroutines.flow.MutableStateFlow(stationList)
+        every { repository.allStations } returns allStationsFlow
+        
+        val bounds = useCase.checkBounds(departure, "Letenské náměstí", preferences, 50.0996, 14.4289)
+        
+        assertTrue("Should be school bound", bounds.third)
     }
 
     private fun createDeparture(line: String, headsign: String, tripId: String, stopId: String): DepartureItem {

@@ -17,7 +17,6 @@ class DestinationLineCacheUseCase @Inject constructor(
         // Home
         if (preferences.homeLat != null && preferences.homeLng != null) {
             if (preferences.homeStopNames.isEmpty() || preferences.homeStopIds.isEmpty() || preferencesManager.isCacheStale(preferences.homeLinesTimestamp)) {
-                println("🔍 DestinationCache: Home refresh...")
                 val info = repository.getNearbyInfo(preferences.homeLat, preferences.homeLng)
                 if (info.stopNames.isNotEmpty()) {
                     preferencesManager.updateDestinationData("home", emptySet(), info.stopNames, info.stopIds)
@@ -29,7 +28,6 @@ class DestinationLineCacheUseCase @Inject constructor(
         // Work
         if (preferences.workLat != null && preferences.workLng != null) {
             if (preferences.workStopNames.isEmpty() || preferences.workStopIds.isEmpty() || preferencesManager.isCacheStale(preferences.workLinesTimestamp)) {
-                println("🔍 DestinationCache: Work refresh...")
                 val info = repository.getNearbyInfo(preferences.workLat, preferences.workLng)
                 if (info.stopNames.isNotEmpty()) {
                     preferencesManager.updateDestinationData("work", emptySet(), info.stopNames, info.stopIds)
@@ -41,7 +39,6 @@ class DestinationLineCacheUseCase @Inject constructor(
         // School
         if (preferences.schoolLat != null && preferences.schoolLng != null) {
             if (preferences.schoolStopNames.isEmpty() || preferences.schoolStopIds.isEmpty() || preferencesManager.isCacheStale(preferences.schoolLinesTimestamp)) {
-                println("🔍 DestinationCache: School refresh...")
                 val info = repository.getNearbyInfo(preferences.schoolLat, preferences.schoolLng)
                 if (info.stopNames.isNotEmpty()) {
                     preferencesManager.updateDestinationData("school", emptySet(), info.stopNames, info.stopIds)

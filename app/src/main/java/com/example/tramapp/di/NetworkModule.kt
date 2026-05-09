@@ -22,12 +22,23 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideThrottleUtil(): com.example.tramapp.utils.ThrottleUtil {
+        return com.example.tramapp.utils.ThrottleUtil()
+    }
+
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(throttleUtil: com.example.tramapp.utils.ThrottleUtil): OkHttpClient {
         val authInterceptor = Interceptor { chain ->
             val request = chain.request().newBuilder()
                 .addHeader("x-access-token", BuildConfig.GOLEMIO_API_KEY)
                 .build()
             chain.proceed(request)
+        }
+
+        val rateLimitInterceptor = Interceptor { chain ->
+            throttleUtil.waitForRateLimitBlocking()
+            chain.proceed(chain.request())
         }
 
         val loggingInterceptor = HttpLoggingInterceptor().apply {
@@ -36,6 +47,7 @@ object NetworkModule {
 
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(rateLimitInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

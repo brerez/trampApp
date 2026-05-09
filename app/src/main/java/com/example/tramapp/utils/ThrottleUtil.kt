@@ -14,16 +14,15 @@ class ThrottleUtil(private val timeProvider: () -> Long = { System.currentTimeMi
     private val throttleMutex = Mutex()
     
     private val callTimestamps = mutableListOf<Long>()
-    private val windowMutex = Mutex()
-
+ 
     suspend fun waitForRateLimit() {
         var waitTime = 0L
-        windowMutex.withLock {
+        synchronized(callTimestamps) {
             val now = timeProvider()
             // Remove timestamps older than 8 seconds
             callTimestamps.removeAll { it < now - 8000 }
             
-            if (callTimestamps.size >= 20) {
+            if (callTimestamps.size >= 19) {
                 // Wait until the oldest call is outside the 8 second window
                 val oldestCall = callTimestamps.first()
                 waitTime = oldestCall + 8000 - now
@@ -34,7 +33,6 @@ class ThrottleUtil(private val timeProvider: () -> Long = { System.currentTimeMi
         }
         
         if (waitTime > 0) {
-            println("🛑 Rate limit approaching! Waiting ${waitTime}ms...")
             delay(waitTime)
         }
         
@@ -42,11 +40,38 @@ class ThrottleUtil(private val timeProvider: () -> Long = { System.currentTimeMi
         checkThrottle()
     }
 
+    fun waitForRateLimitBlocking() {
+        var waitTime = 0L
+        synchronized(callTimestamps) {
+            val now = timeProvider()
+            // Remove timestamps older than 8 seconds
+            callTimestamps.removeAll { it < now - 8000 }
+            
+            if (callTimestamps.size >= 19) {
+                val oldestCall = callTimestamps.first()
+                waitTime = oldestCall + 8000 - now
+            }
+            
+            val scheduledTime = if (waitTime > 0) now + waitTime else now
+            callTimestamps.add(scheduledTime)
+        }
+        
+        if (waitTime > 0) {
+            Thread.sleep(waitTime)
+        }
+        
+        // Also check for 429 throttle
+        val now = timeProvider()
+        if (now < _throttleUntil.value) {
+            val throttleWait = _throttleUntil.value - now
+            Thread.sleep(throttleWait)
+        }
+    }
+
     suspend fun checkThrottle() {
         val now = timeProvider()
         if (now < _throttleUntil.value) {
             val waitTime = _throttleUntil.value - now
-            println("🛑 API Throttled! Waiting ${waitTime}ms...")
             delay(waitTime)
         }
     }

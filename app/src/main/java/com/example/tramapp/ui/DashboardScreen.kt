@@ -85,7 +85,25 @@ fun DashboardScreen(
         }
     }
 
-    val expandedStations = remember { mutableStateMapOf<Int, Boolean>().apply { put(0, true) } }
+    val expandedStations = remember { mutableStateMapOf<String, Boolean>() }
+    
+    // Auto-expand the first station if none are expanded after refresh
+    androidx.compose.runtime.LaunchedEffect(nearbyStations) {
+        if (nearbyStations.isNotEmpty()) {
+            val visibleBaseNames = nearbyStations.map { it.name.replace(Regex("\\s*\\[.*]$"), "").trim() }.toSet()
+            
+            // Clean up expandedStates for stations that disappeared
+            val keysToRemove = expandedStations.keys.filter { !visibleBaseNames.contains(it) }
+            keysToRemove.forEach { expandedStations.remove(it) }
+            
+            val isAnyExpanded = expandedStations.values.any { it }
+            if (!isAnyExpanded) {
+                val firstStation = nearbyStations.first()
+                val baseName = firstStation.name.replace(Regex("\\s*\\[.*]$"), "").trim()
+                expandedStations[baseName] = true
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(DeepBlack)) {
         Box(
@@ -182,7 +200,7 @@ fun DashboardScreen(
                             platformLabel to (stationDepartures[station.id] ?: emptyList())
                         }
 
-                        val isExpanded = expandedStations[index] ?: false
+                        val isExpanded = expandedStations[baseName] ?: false
 
                         StationGroupCard(
                             baseName = baseName,
@@ -191,8 +209,8 @@ fun DashboardScreen(
                             isLoading = isAnyLoading,
                             favorites = favorites,
                             onExpandToggle = {
-                                expandedStations[index] = !isExpanded
-                                if (!isExpanded && platformDeps.all { it.second.isEmpty() }) {
+                                expandedStations[baseName] = !isExpanded
+                                if (!isExpanded) {
                                     viewModel.refreshStationGroup(platformIds)
                                 }
                             },
