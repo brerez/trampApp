@@ -129,7 +129,10 @@ class DashboardViewModel @Inject constructor(
             }
 
             // Step 2: Instantly show cached departures from last run (~50ms, no network needed)
-            loadCachedDepartures()
+            // Launched in parallel to avoid blocking network operations
+            launch {
+                loadCachedDepartures()
+            }
 
             // Step 3: Kick off GPS only if not in manual mode
             if (!prefs.isManualStartup) {

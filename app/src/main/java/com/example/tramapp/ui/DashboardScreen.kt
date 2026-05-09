@@ -70,9 +70,14 @@ fun DashboardScreen(
     }
 
     LaunchedEffect(currentLocation) {
-        cameraPositionState.animate(
-            com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(currentLocation, 15f)
-        )
+        try {
+            cameraPositionState.animate(
+                com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(currentLocation, 15f)
+            )
+        } catch (e: Exception) {
+            // Fallback if CameraUpdateFactory is not initialized yet
+            cameraPositionState.position = com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(currentLocation, 15f)
+        }
     }
 
     LaunchedEffect(cameraPositionState.isMoving) {
@@ -136,7 +141,6 @@ fun DashboardScreen(
 
                 // 3. Title
                 item {
-                    Spacer(modifier = Modifier.height(30.dp))
                     Text(
                         "Nearby Stations",
                         style = MaterialTheme.typography.headlineSmall.copy(
@@ -267,6 +271,12 @@ fun GoogleMapComponent(
     currentLocation: LatLng,
     viewModel: DashboardViewModel
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val hasLocationPermission = remember {
+        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -288,7 +298,7 @@ fun GoogleMapComponent(
             ),
             properties = MapProperties(
                 mapType = MapType.NORMAL,
-                isMyLocationEnabled = true,
+                isMyLocationEnabled = hasLocationPermission,
                 mapStyleOptions = MapStyleOptions(
                     "[" +
                     "  { \"elementType\": \"geometry\", \"stylers\": [ { \"color\": \"#ebe3cd\" } ] }," +
@@ -309,33 +319,7 @@ fun GoogleMapComponent(
             }
         }
 
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp),
-            color = SurfaceGlass,
-            shape = RoundedCornerShape(12.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, GlassBorder)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text("Follow GPS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Switch(
-                    checked = !isManualLocation,
-                    onCheckedChange = { checked ->
-                        if (checked) {
-                            viewModel.revertToGps()
-                        } else {
-                            viewModel.updateLocation(currentLocation, isManual = true)
-                        }
-                    },
-                    modifier = Modifier.scale(0.7f)
-                )
-            }
-        }
+
 
         Column(
             modifier = Modifier
