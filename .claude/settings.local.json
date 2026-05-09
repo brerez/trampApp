@@ -3,7 +3,33 @@
     "allow": [
       "Bash(kotlinc *)",
       "Bash(./gradlew *)",
-      "Bash(findstr *)"
+      "Bash(findstr *)",
+      "Bash(gradle test *)",
+      "Bash(Select-Object -Last 50)",
+      "Bash(Sort-Object)",
+      "Bash(./gradlew.bat test *)",
+      "Bash(Select-String -Pattern \"\\(PASS|FAIL|SUCCESS|BUILD|test\\)\")",
+      "Bash(Select-String \"\\(error|Error|ERROR\\)\" -CaseSensitive)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Get-Content -Tail 100)",
+      "Bash(Select-String \"error|Error|ERROR|failed|FAILED|FAIL\")",
+      "Bash(Select-Object -Last 100)",
+      "Bash(Select-String -Pattern \"\\(BUILD|FAILED|test\\)\")",
+      "Bash(Find-String -Pattern \"e:.*\\\\.kt:\")",
+      "Bash(Select-Object -First 100)",
+      "Bash(Get-Content -Tail 80)",
+      "Bash(Select-String -Pattern \"^e:.*\\\\.kt:\")",
+      "Bash(./gradlew.bat compileDebugKotlin --no-daemon)",
+      "Bash(./gradlew.bat compileDebugUnitTestKotlin)",
+      "Bash(Select-String \"error:\" -Context 0,3)",
+      "Bash(powershell -Command \"./gradlew.bat compileDebugUnitTestKotlin 2>&1\")",
+      "Bash(Remove-Item *)",
+      "Bash(powershell *)",
+      "Bash(.\\\\gradlew.bat test *)",
+      "PowerShell(.\\\\gradlew.bat test --rerun-tasks)",
+      "Bash(Get-Content \"C:\\\\Users\\\\erezb\\\\git\\\\tramApp\\\\app\\\\src\\\\test\\\\java\\\\com\\\\example\\\\tramapp\\\\domain\\\\RealWorldBoundEdgeCaseTest.kt\" -Head 30)",
+      "Bash(Select-String \"vystaviste\" -Context 0,1)",
+      "WebSearch"
     ]
   }
 }

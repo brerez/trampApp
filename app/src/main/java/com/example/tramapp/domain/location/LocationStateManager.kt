@@ -19,6 +19,13 @@ class LocationStateManager @Inject constructor() {
     private val _isManual = MutableStateFlow(false)
     val isManual: StateFlow<Boolean> = _isManual.asStateFlow()
 
+    // Expose internal state for testing
+    @Deprecated("Internal API - for testing only", ReplaceWith("isManual"))
+    val currentGpsLocation: StateFlow<LatLng?> = _currentGpsLocation.asStateFlow()
+
+    @Deprecated("Internal API - for testing only", ReplaceWith("isManual"))
+    val userSelectedLocation: StateFlow<LatLng?> = _userSelectedLocation.asStateFlow()
+
     fun updateGpsLocation(latLng: LatLng) {
         _currentGpsLocation.value = latLng
         if (!_isManual.value) {
