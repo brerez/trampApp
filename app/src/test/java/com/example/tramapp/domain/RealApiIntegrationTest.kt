@@ -11,7 +11,9 @@ import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.File
 import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.util.Properties
 
 class RealApiIntegrationTest {
@@ -24,7 +26,11 @@ class RealApiIntegrationTest {
     @Before
     fun setup() {
         val properties = Properties()
-        properties.load(FileInputStream("C:/Users/erezb/git/tramApp/local.properties"))
+        val localPropsFile = File("../local.properties")
+        if (!localPropsFile.exists()) {
+            throw FileNotFoundException("local.properties not found at " + localPropsFile.absolutePath)
+        }
+        properties.load(FileInputStream(localPropsFile))
         val apiKey = properties.getProperty("GOLEMIO_API_KEY")
 
         val okHttpClient = okhttp3.OkHttpClient.Builder()

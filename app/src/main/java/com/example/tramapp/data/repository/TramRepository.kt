@@ -160,16 +160,33 @@ class TramRepository @Inject constructor(
             if (cached.stopIds == "EMPTY") {
                 return emptyList()
             }
-            
+
             if (cached.stopIds.contains("||NAMES:")) {
                 val parts = cached.stopIds.split("||NAMES:")
                 val ids = parts[0].split("|")
                 val names = parts[1].split("|")
                 return ids.mapIndexed { index, id -> id to names.getOrElse(index) { "" } }
             }
-            
-            // If it's old cache without names, don't use it!
-            // Fall through to network fetch to migrate the cache.
+
+            // Legacy format: pipe-separated IDs or names without "||NAMES:" prefix
+            // Check if it has "||ID:" prefix (legacy mixed format)
+            // Format: "||ID:ID1,Type:Code1|ID2|ID3,Type:Code3" — commas separate ID from platform metadata
+            if (cached.stopIds.startsWith("||ID:")) {
+                val afterPrefix = cached.stopIds.substringAfter("||ID:")
+                val parts = afterPrefix.split("|")
+                val ids = parts.mapNotNull { part ->
+                    val id = part.split(",")[0].trim()
+                    if (id.isNotEmpty()) listOf(id) else emptyList()
+                }.flatten()
+                // No names in legacy mixed format, use IDs as names
+                return ids.map { id -> id to id }
+            }
+
+            // Plain pipe-separated format (legacy names or IDs without prefix)
+            val legacyParts = cached.stopIds.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+            if (legacyParts.isNotEmpty()) {
+                return legacyParts.map { it to it }
+            }
         }
 
         // 2. Network Fetch (Atomic per RouteKey)
@@ -252,8 +269,8 @@ class TramRepository @Inject constructor(
                 stopNames.add(baseName)
                 stopIds.add(stop.properties.stopId)
             }
-        } catch (e: Exception) { 
-            android.util.Log.w("TramRepository", "Failed to fetch nearby stops in getNearbyInfo", e)
+        } catch (e: Exception) {
+            try { android.util.Log.w("TramRepository", "Failed to fetch nearby stops in getNearbyInfo", e) } catch (_: Exception) {}
         }
         return NearbyInfo(emptySet(), stopNames, stopIds)
     }

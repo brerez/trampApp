@@ -48,7 +48,6 @@ fun DashboardScreen(
 ) {
     val currentLocation by viewModel.currentLocation.collectAsState()
     val isManualLocation by viewModel.isManualLocation.collectAsState()
-    val nearbyStations by viewModel.nearbyStations.collectAsState()
     val stationDepartures by viewModel.stationDepartures.collectAsState()
     val loadingStations by viewModel.loadingStations.collectAsState()
     val status by viewModel.status.collectAsState()
@@ -60,6 +59,9 @@ fun DashboardScreen(
     val apiQueryCount by viewModel.apiQueryCount.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val favoritesFirst by viewModel.favoritesFirst.collectAsState()
+    val visibleStations by viewModel.visibleStations.collectAsState()
+    val hasMoreStations by viewModel.hasMoreStations.collectAsState()
+    val visibleCount by viewModel.visibleStationCount.collectAsState()
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     // Unified loading state
@@ -88,17 +90,17 @@ fun DashboardScreen(
     val expandedStations = remember { mutableStateMapOf<String, Boolean>() }
     
     // Auto-expand the first station if none are expanded after refresh
-    androidx.compose.runtime.LaunchedEffect(nearbyStations) {
-        if (nearbyStations.isNotEmpty()) {
-            val visibleBaseNames = nearbyStations.map { it.name.replace(Regex("\\s*\\[.*]$"), "").trim() }.toSet()
-            
+    androidx.compose.runtime.LaunchedEffect(visibleStations) {
+        if (visibleStations.isNotEmpty()) {
+            val visibleBaseNames = visibleStations.map { it.name.replace(Regex("\\s*\\[.*]$"), "").trim() }.toSet()
+
             // Clean up expandedStates for stations that disappeared
             val keysToRemove = expandedStations.keys.filter { !visibleBaseNames.contains(it) }
             keysToRemove.forEach { expandedStations.remove(it) }
-            
+
             val isAnyExpanded = expandedStations.values.any { it }
             if (!isAnyExpanded) {
-                val firstStation = nearbyStations.first()
+                val firstStation = visibleStations.first()
                 val baseName = firstStation.name.replace(Regex("\\s*\\[.*]$"), "").trim()
                 expandedStations[baseName] = true
             }
@@ -131,7 +133,7 @@ fun DashboardScreen(
                     } else {
                         HeaderSection(
                             queryCount = apiQueryCount,
-                            stationsCount = nearbyStations.size,
+                            stationsCount = visibleCount,
                             onSettingsClick = { showSettingsDialog = true }
                         )
                     }
@@ -166,10 +168,10 @@ fun DashboardScreen(
 
                 // 4. Map Component
                 item {
-                    if (isLoading.value && nearbyStations.isEmpty()) {
+                    if (isLoading.value && visibleStations.isEmpty()) {
                         SkeletonRow(width = 300.dp)
                     } else {
-                        val filteredStations = nearbyStations.filter { stationDepartures.containsKey(it.id) }
+                        val filteredStations = visibleStations.filter { stationDepartures.containsKey(it.id) }
                         GoogleMapComponent(
                             cameraPositionState = cameraPositionState,
                             onLocationChange = { viewModel.updateLocation(it, isManual = true) },
@@ -182,12 +184,12 @@ fun DashboardScreen(
                 }
 
                 // 5. Stations List
-                if (isLoading.value && nearbyStations.isEmpty()) {
+                if (isLoading.value && visibleStations.isEmpty()) {
                     items(5) {
                         SkeletonRow(width = 300.dp)
                     }
                 } else {
-                    val grouped = nearbyStations.groupBy { station ->
+                    val grouped = visibleStations.groupBy { station ->
                         station.name.replace(Regex("\\s*\\[.*]$"), "").trim()
                     }
 
@@ -221,6 +223,40 @@ fun DashboardScreen(
                                 viewModel.selectTram(tripId, routeName, destination)
                             }
                         )
+                    }
+
+                    if (hasMoreStations) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(AccentViolet.copy(alpha = 0.15f))
+                                    .border(1.dp, AccentViolet, RoundedCornerShape(16.dp))
+                                    .clickable { viewModel.loadMoreStations() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = AccentViolet,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "Load 3 more stations",
+                                        color = AccentViolet,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

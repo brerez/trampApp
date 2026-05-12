@@ -73,6 +73,11 @@ android {
         }
     }
     
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
     tasks.withType<Test> {
         testLogging {
             showStandardStreams = true

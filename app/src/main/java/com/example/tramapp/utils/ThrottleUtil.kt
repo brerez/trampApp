@@ -21,21 +21,20 @@ class ThrottleUtil(private val timeProvider: () -> Long = { System.currentTimeMi
             val now = timeProvider()
             // Remove timestamps older than 8 seconds
             callTimestamps.removeAll { it < now - 8000 }
-            
-            if (callTimestamps.size >= 19) {
+
+            if (callTimestamps.size >= 20) {
                 // Wait until the oldest call is outside the 8 second window
                 val oldestCall = callTimestamps.first()
                 waitTime = oldestCall + 8000 - now
             }
-            
-            val scheduledTime = if (waitTime > 0) now + waitTime else now
-            callTimestamps.add(scheduledTime)
+
+            callTimestamps.add(now)
         }
-        
+
         if (waitTime > 0) {
             delay(waitTime)
         }
-        
+
         // Also check for 429 throttle
         checkThrottle()
     }
@@ -46,16 +45,15 @@ class ThrottleUtil(private val timeProvider: () -> Long = { System.currentTimeMi
             val now = timeProvider()
             // Remove timestamps older than 8 seconds
             callTimestamps.removeAll { it < now - 8000 }
-            
-            if (callTimestamps.size >= 19) {
+
+            if (callTimestamps.size >= 20) {
                 val oldestCall = callTimestamps.first()
                 waitTime = oldestCall + 8000 - now
             }
-            
-            val scheduledTime = if (waitTime > 0) now + waitTime else now
-            callTimestamps.add(scheduledTime)
+
+            callTimestamps.add(now)
         }
-        
+
         if (waitTime > 0) {
             Thread.sleep(waitTime)
         }

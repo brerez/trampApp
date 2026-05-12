@@ -52,6 +52,7 @@ class TramRepositoryEdgeCasesTest {
 
     @Test
     fun getNearbyInfoShouldHandleAPIExceptionGracefully() = runTest {
+        whenever(stationDao.getAllStations()).thenReturn(kotlinx.coroutines.flow.flowOf(emptyList()))
         whenever(apiService.getStops(any(), any())).thenThrow(
             RuntimeException("API error")
         )
@@ -118,6 +119,7 @@ class TramRepositoryEdgeCasesTest {
 
     @Test
     fun getNearbyInfoShouldHandleAPIRateLimitError() = runTest {
+        whenever(stationDao.getAllStations()).thenReturn(kotlinx.coroutines.flow.flowOf(emptyList()))
         whenever(apiService.getStops(any(), any())).thenThrow(
             RuntimeException("Rate limit error")
         )

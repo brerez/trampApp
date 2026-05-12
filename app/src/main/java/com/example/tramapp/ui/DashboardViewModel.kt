@@ -56,38 +56,73 @@ class DashboardViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val nearbyStations: StateFlow<List<StationEntity>> = combine(
+    private val _visibleStationCount = MutableStateFlow(3)
+    val visibleStationCount: StateFlow<Int> = _visibleStationCount.asStateFlow()
+
+    val visibleStations: StateFlow<List<StationEntity>> = combine(
         repository.allStations,
         currentLocation,
         _currentNearbyStationIds,
-        stationDepartures,
+        visibleStationCount,
+        favorites,
+        favoritesFirst,
         preferencesManager.userPreferences
-    ) { all, loc, ids, deps, prefs ->
-        all.filter { station ->
-            // Calculate distance approximation in meters
-            val dLat = (station.latitude - loc.latitude) * 111000
-            val dLng = (station.longitude - loc.longitude) * 71000
-            val distSq = dLat * dLat + dLng * dLng
-            val maxDistSq = prefs.displayRadius * prefs.displayRadius
-            val isWithinRadius = distSq <= maxDistSq
+    ) { arr: Array<*> ->
+        @Suppress("UNCHECKED_CAST")
+        val all = arr[0] as List<StationEntity>
+        val loc = arr[1] as LatLng
+        val ids = arr[2] as Set<String>
+        val count = arr[3] as Int
+        val favs = arr[4] as Set<String>
+        val favsFirst = arr[5] as Boolean
+        val prefs = arr[6] as com.example.tramapp.data.local.datastore.UserPreferences
 
-            // Prioritize stations from the latest API call, but keep showing ones with loaded departures to avoid blank screen during refresh
-            val shouldShow = if (ids.isNotEmpty()) {
-                (ids.contains(station.id) || deps.containsKey(station.id)) && isWithinRadius
-            } else {
-                isWithinRadius
-            }
-
-            if (!shouldShow) return@filter false
-
-            // Only show if it has trams (if we've loaded its departures)
-            if (deps.containsKey(station.id)) {
-                deps[station.id]?.isNotEmpty() == true
-            } else {
-                true // Show if not loaded yet
-            }
+        val maxDist = prefs.displayRadius.toFloat()
+        val nearbyIds = if (ids.isNotEmpty()) {
+            ids
+        } else {
+            all.filter {
+                val dLat = (it.latitude - loc.latitude) * 111000.0
+                val dLng = (it.longitude - loc.longitude) * 71000.0
+                (dLat * dLat + dLng * dLng) <= (maxDist * maxDist).toDouble()
+            }.toSet()
         }
+
+        all.filter { it.id in nearbyIds }
+            .sortedWith(Comparator { a, b ->
+                val aFav = if (favsFirst) favs.contains(a.name) else false
+                val bFav = if (favsFirst) favs.contains(b.name) else false
+                if (aFav != bFav) return@Comparator if (aFav) -1 else 1
+                val aDist = (a.latitude - loc.latitude).let { it * it } +
+                            (a.longitude - loc.longitude).let { it * it }
+                val bDist = (b.latitude - loc.latitude).let { it * it } +
+                            (b.longitude - loc.longitude).let { it * it }
+                aDist.compareTo(bDist)
+            })
+            .take(count)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val hasMoreStations: StateFlow<Boolean> = combine(
+        repository.allStations,
+        currentLocation,
+        _currentNearbyStationIds,
+        visibleStationCount
+    ) { all, loc, ids, count ->
+        val maxDist = 2000f
+        val nearbyIds = if (ids.isNotEmpty()) ids else {
+            all.filter {
+                val dLat = (it.latitude - loc.latitude) * 111000
+                val dLng = (it.longitude - loc.longitude) * 71000
+                (dLat * dLat + dLng * dLng) <= (maxDist * maxDist)
+            }.mapTo(mutableSetOf()) { it.id }
+        }
+        val uniqueNames = all.filter { it.id in nearbyIds }
+            .map { it.name.replace(Regex("\\s*\\[.*]$"), "").trim() }
+            .toSet()
+        count < uniqueNames.size
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val nearbyStations: StateFlow<List<StationEntity>> = visibleStations
 
     private val _status = MutableStateFlow("Initializing...")
     val status: StateFlow<String> = _status.asStateFlow()
@@ -117,9 +152,11 @@ class DashboardViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    private val _loadMoreChannel = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private var tripFetchJob: kotlinx.coroutines.Job? = null
     private val stationJobs = mutableMapOf<String, Job>()
     private val enrichmentJobs = mutableMapOf<String, Job>()
+    private var visibleStationsFetchJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -159,6 +196,21 @@ class DashboardViewModel @Inject constructor(
                 destinationLineCache.refreshIfNeeded(prefs)
             } catch (e: Exception) {
                 android.util.Log.w("DashboardViewModel", "Cache refresh failed", e)
+            }
+        }
+
+        // Step 6: Fetch departures for newly visible stations (progressive reveal)
+        visibleStationsFetchJob = viewModelScope.launch {
+            _loadMoreChannel.collect {
+                val newStations = visibleStations.value
+                val currentCount = _visibleStationCount.value
+                val previouslyVisible = newStations.take(currentCount - 3)
+                val newlyRevealed = newStations.drop(previouslyVisible.size).take(3)
+                for (station in newlyRevealed) {
+                    if (!_rawStationDepartures.value.containsKey(station.id)) {
+                        refreshStation(station.id)
+                    }
+                }
             }
         }
     }
@@ -355,24 +407,6 @@ class DashboardViewModel @Inject constructor(
                 val currentMap = _rawStationDepartures.value.toMutableMap()
                 currentMap[stationId] = deps.take(5)
                 _rawStationDepartures.value = currentMap
-                
-                // Show toast only if ALL platforms for this station are empty
-                val allStations = repository.allStations.first()
-                val currentStation = allStations.find { it.id == stationId }
-                val baseName = currentStation?.name?.replace(Regex("\\s*\\[.*]$"), "")?.trim() ?: "Unknown"
-                
-                val siblingPlatforms = allStations.filter { 
-                    it.name.replace(Regex("\\s*\\[.*]$"), "").trim() == baseName 
-                }
-                
-                val allEmpty = siblingPlatforms.isNotEmpty() && siblingPlatforms.all { platform ->
-                    val platformDeps = currentMap[platform.id]
-                    platformDeps != null && platformDeps.isEmpty()
-                }
-                
-                if (allEmpty) {
-                    android.widget.Toast.makeText(context, "Station $baseName has no trams, removing from list", android.widget.Toast.LENGTH_SHORT).show()
-                }
 
                 // 3. Enrich with directional info (async, serial to avoid API limits)
                 enrichStation(stationId, stationName, deps.take(5), prefs)
@@ -451,6 +485,13 @@ class DashboardViewModel @Inject constructor(
         // We keep _selectedTripDetails for a smooth exit animation if needed, 
         // or clear it immediately. Let's clear it to be safe.
         _selectedTripDetails.value = null
+    }
+
+    fun loadMoreStations() {
+        viewModelScope.launch {
+            val currentCount = _visibleStationCount.value
+            _visibleStationCount.value = currentCount + 3
+        }
     }
 
     fun toggleFavorite(line: String) {
