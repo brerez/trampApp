@@ -24,6 +24,7 @@ import java.time.OffsetDateTime
 fun TramRow(
     smartDeparture: com.example.tramapp.domain.SmartDeparture, 
     isFavorite: Boolean,
+    now: OffsetDateTime,
     onFavoriteClick: () -> Unit,
     onClick: () -> Unit
 ) {
@@ -45,7 +46,6 @@ fun TramRow(
         else -> null
     }
 
-    val now = OffsetDateTime.now()
     val arrivalTime = try {
         OffsetDateTime.parse(tram.arrival.predicted ?: tram.arrival.scheduled)
     } catch (e: Exception) {

@@ -51,6 +51,7 @@ fun DashboardScreen(
     val stationDepartures by viewModel.stationDepartures.collectAsState()
     val loadingStations by viewModel.loadingStations.collectAsState()
     val status by viewModel.status.collectAsState()
+    val currentTime by viewModel.currentTime.collectAsState()
 
     val showTripPopup by viewModel.showTripPopup.collectAsState()
     val isTripLoading by viewModel.isTripLoading.collectAsState()
@@ -210,6 +211,7 @@ fun DashboardScreen(
                             isExpanded = isExpanded,
                             isLoading = isAnyLoading,
                             favorites = favorites,
+                            now = currentTime,
                             onExpandToggle = {
                                 expandedStations[baseName] = !isExpanded
                                 if (!isExpanded) {

@@ -44,6 +44,13 @@ class DashboardViewModel @Inject constructor(
     val favoritesFirst: StateFlow<Boolean> = preferencesManager.userPreferences.map { it.favoritesFirst }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val currentTime: StateFlow<java.time.OffsetDateTime> = flow {
+        while (true) {
+            emit(java.time.OffsetDateTime.now())
+            kotlinx.coroutines.delay(10000) // Tick every 10 seconds
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), java.time.OffsetDateTime.now())
+
     val stationDepartures: StateFlow<Map<String, List<SmartDeparture>>> = combine(
         _rawStationDepartures,
         favorites,
@@ -213,6 +220,18 @@ class DashboardViewModel @Inject constructor(
                 }
             }
         }
+
+        // Step 7: Periodic departures refresh every 60s
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(60000)
+                val visible = visibleStations.value
+                for (station in visible) {
+                    refreshStation(station.id)
+                    kotlinx.coroutines.delay(300) // Small delay between platform loads to avoid hitting API limit at once
+                }
+            }
+        }
     }
 
     /** Loads cached departures from Room and shows them immediately — no network call */
@@ -332,6 +351,14 @@ class DashboardViewModel @Inject constructor(
             try {
                 val ids = repository.refreshNearbyStations(loc.latitude, loc.longitude, 1500)
                 _currentNearbyStationIds.value = ids.toSet()
+                
+                // Refresh all currently visible stations' departures immediately
+                val visible = visibleStations.value
+                for (station in visible) {
+                    refreshStation(station.id)
+                    kotlinx.coroutines.delay(300)
+                }
+                
                 _status.value = "Updated"
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"

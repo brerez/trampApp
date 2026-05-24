@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tramapp.ui.theme.*
+import java.time.OffsetDateTime
 
 @Composable
 fun StationGroupCard(
@@ -32,6 +33,7 @@ fun StationGroupCard(
     isExpanded: Boolean,
     isLoading: Boolean,
     favorites: Set<String>,
+    now: OffsetDateTime,
     onExpandToggle: () -> Unit,
     onFavoriteClick: (String) -> Unit,
     onTramClick: (String, String, String) -> Unit
@@ -127,6 +129,7 @@ fun StationGroupCard(
                     TramRow(
                         smartDeparture = smartDeparture,
                         isFavorite = favorites.contains(lineName),
+                        now = now,
                         onFavoriteClick = { onFavoriteClick(lineName) },
                         onClick = {
                             val tripId = smartDeparture.item.trip.tripId ?: ""
