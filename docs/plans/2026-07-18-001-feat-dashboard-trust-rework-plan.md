@@ -7,9 +7,13 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-brainstorm
 execution: code
+status: complete
+completed_date: 2026-07-19
 ---
 
 # TramApp Dashboard Trust Rework - Plan
+
+> **Status: All units (U1–U11) implemented and verified in code as of 2026-07-19** (commit `2303b2d`, plus follow-up fixes in `51e35da` and `76ac144`). Confirmed present: `StationUiState.kt` (U4), `androidTest/DashboardTrustFlowTest.kt` + `ScreenshotUtil.kt` + `docs/verification-harness.md` (U1), `docs/design-review-dashboard.md` (U3), amenity fields on `GolemioModels`/`GetSmartDeparturesUseCase`/`DepartureEntity` with Room migration to v9 (U8), amenity glyphs in `TramRow.kt` (U9), gradient/emoji badge removed from `StationGroupCard.kt` (U9), `CompactStatusIndicator`/gear icon/gated debug counter in `DashboardScreen.kt` header (U10), dark collapsible map via `MapStyleConfig.kt` + `mapHeight` animation (U11), and unit tests `DashboardViewModelStateTest.kt` / `DashboardViewModelFetchOrderTest.kt` / `TramRepositoryAmenityTest.kt` (U4/U6/U7/U8). Not independently re-verified in this pass: an actual `connectedDebugAndroidTest` emulator run (R14–R16) — the harness and instrumented test exist, but no fresh emulator pass was executed as part of this documentation update.
 
 > **Product Contract preservation:** Product Contract unchanged. Planning enriched this file in place (Planning Contract, Implementation Units, Verification Contract, Definition of Done) without altering any R/F/AE IDs or product scope. R7 (accessibility indicator) remains gated on the live-API probe (U2) exactly as the original Dependencies section framed it; its graceful-degradation path is already covered by R9.
 
