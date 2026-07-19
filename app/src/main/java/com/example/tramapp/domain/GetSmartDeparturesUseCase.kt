@@ -15,7 +15,10 @@ data class SmartDeparture(
     val item: DepartureItem,
     var isHomeBound: Boolean = false,
     var isWorkBound: Boolean = false,
-    var isSchoolBound: Boolean = false
+    var isSchoolBound: Boolean = false,
+    // U8 (R7-R9): nullable — null = unknown (omit indicator), non-null = known.
+    val isAccessible: Boolean? = item.trip.isWheelchairAccessible,
+    val isAirConditioned: Boolean? = item.trip.isAirConditioned
 )
 
 @Singleton

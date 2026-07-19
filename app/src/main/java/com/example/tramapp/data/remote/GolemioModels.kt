@@ -39,7 +39,10 @@ data class RouteInfo(
 )
 data class TripInfo(
     @SerializedName("headsign") val headsign: String,
-    @SerializedName("id") val tripId: String? = null
+    @SerializedName("id") val tripId: String? = null,
+    // U8/KTD4 (R7-R9): nullable — null means "unknown" (omit the indicator), not "false".
+    @SerializedName("is_wheelchair_accessible") val isWheelchairAccessible: Boolean? = null,
+    @SerializedName("is_air_conditioned") val isAirConditioned: Boolean? = null
 )
 data class TimestampInfo(val scheduled: String, val predicted: String?)
 data class StopInfo(val id: String)

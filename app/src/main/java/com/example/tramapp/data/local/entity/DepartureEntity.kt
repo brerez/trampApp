@@ -12,5 +12,8 @@ data class DepartureEntity(
     val headsign: String,
     val arrivalTime: String, // ISO-8601
     val isPredicted: Boolean,
-    val tripId: String? = null
+    val tripId: String? = null,
+    // U8 (R7-R9): nullable — null = unknown (omit indicator), non-null = known.
+    val isAccessible: Boolean? = null,
+    val isAirConditioned: Boolean? = null
 )

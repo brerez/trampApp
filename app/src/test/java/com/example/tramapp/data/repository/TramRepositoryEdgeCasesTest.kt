@@ -299,7 +299,7 @@ class TramRepositoryEdgeCasesTest {
             departures = emptyList()
         )
 
-        whenever(apiService.getDepartures(any(), any(), any(), any())).thenReturn(mockResponse)
+        whenever(apiService.getDepartures(any(), any(), any(), any(), any())).thenReturn(mockResponse)
 
         // Should mark station as non-tram and return empty list
         val result = repository.getDepartures("U1")
@@ -331,7 +331,7 @@ class TramRepositoryEdgeCasesTest {
             )
         )
 
-        whenever(apiService.getDepartures(any(), any(), any(), any())).thenReturn(mockResponse)
+        whenever(apiService.getDepartures(any(), any(), any(), any(), any())).thenReturn(mockResponse)
 
         // Should still update isTram status to false when no current departures
         repository.getDepartures("U1")
@@ -358,7 +358,7 @@ class TramRepositoryEdgeCasesTest {
             )
         )
 
-        whenever(apiService.getDepartures(any(), any(), any(), any())).thenReturn(mockResponse)
+        whenever(apiService.getDepartures(any(), any(), any(), any(), any())).thenReturn(mockResponse)
 
         val result = repository.getDepartures("U1")
 
@@ -378,7 +378,7 @@ class TramRepositoryEdgeCasesTest {
             )
         )
 
-        whenever(apiService.getDepartures(any(), any(), any(), any())).thenReturn(mockResponse)
+        whenever(apiService.getDepartures(any(), any(), any(), any(), any())).thenReturn(mockResponse)
 
         val result = repository.getDepartures("U1")
 
@@ -398,7 +398,7 @@ class TramRepositoryEdgeCasesTest {
             )
         )
 
-        whenever(apiService.getDepartures(any(), any(), any(), any())).thenReturn(mockResponse)
+        whenever(apiService.getDepartures(any(), any(), any(), any(), any())).thenReturn(mockResponse)
 
         val result = repository.getDepartures("U1")
 

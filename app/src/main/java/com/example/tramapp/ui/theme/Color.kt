@@ -37,4 +37,6 @@ val SchoolGlow = Color(0xFFE65A29)  // Slightly darker orange-red
 
 // GlassBorder - adjusted for better visibility
 // Original: 33FFFFFF → Luminance: 0.874, Contrast: 1.72:1 (FAIL)
-val GlassBorder = Color(0x4DCCCCCC)  // Medium gray with reduced opacity
+// U11 (R26): raised alpha further (0x4D -> 0x66) for a crisper edge against DeepBlack under
+// simulated glare — favors a visible solid border over relying on the glass-blur aesthetic.
+val GlassBorder = Color(0x66CCCCCC)  // Medium gray, slightly higher opacity

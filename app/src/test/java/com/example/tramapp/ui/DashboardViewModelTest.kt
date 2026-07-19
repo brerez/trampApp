@@ -126,8 +126,8 @@ class DashboardViewModelTest {
             fusedLocationClient,
             locationStateManager,
             context
-        )
-        
+        ).apply { autoRefreshEnabled = false }
+
         // Subscribe to flow to trigger stateIn
         val job = backgroundScope.launch {
             viewModel.stationDepartures.collect {}

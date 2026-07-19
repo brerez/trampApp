@@ -11,23 +11,30 @@ import com.google.maps.android.compose.MapUiSettings
  */
 object MapStyleConfig {
 
+    // U11 (R25, R26): the JSON string, shared by getPremiumDarkMapProperties() and
+    // GoogleMapComponent (DashboardScreen.kt) so there's one dark style, not two inline
+    // copies. Dark geometry, muted water, low-key labels — no bright tan rectangle.
+    const val DARK_MAP_STYLE_JSON = "[" +
+        "  { \"elementType\": \"geometry\", \"stylers\": [ { \"color\": \"#1a1a2e\" } ] }," +
+        "  { \"elementType\": \"labels.text.fill\", \"stylers\": [ { \"color\": \"#8a8aa3\" } ] }," +
+        "  { \"elementType\": \"labels.text.stroke\", \"stylers\": [ { \"color\": \"#0f0f1e\" } ] }," +
+        "  { \"featureType\": \"administrative\", \"elementType\": \"geometry.stroke\", \"stylers\": [ { \"color\": \"#3a3a52\" } ] }," +
+        "  { \"featureType\": \"poi\", \"elementType\": \"labels.text.fill\", \"stylers\": [ { \"color\": \"#6a6a85\" } ] }," +
+        "  { \"featureType\": \"road\", \"elementType\": \"geometry\", \"stylers\": [ { \"color\": \"#2a2a42\" } ] }," +
+        "  { \"featureType\": \"road\", \"elementType\": \"geometry.stroke\", \"stylers\": [ { \"color\": \"#1a1a2e\" } ] }," +
+        "  { \"featureType\": \"transit\", \"elementType\": \"geometry\", \"stylers\": [ { \"color\": \"#2a2a42\" } ] }," +
+        "  { \"featureType\": \"water\", \"elementType\": \"geometry.fill\", \"stylers\": [ { \"color\": \"#0d0d1a\" } ] }" +
+        "]"
+
     /**
-     * Premium dark mode style (current app default).
+     * Premium dark mode style (app default) — genuinely dark (previously mislabeled: this
+     * used to hold the light tan `#ebe3cd` palette).
      */
     fun getPremiumDarkMapProperties(): MapProperties {
         return MapProperties(
             mapType = MapType.NORMAL,
             isMyLocationEnabled = true,
-            mapStyleOptions = MapStyleOptions(
-                "[" +
-                    "  { \"elementType\": \"geometry\", \"stylers\": [ { \"color\": \"#ebe3cd\" } ] }," +
-                    "  { \"elementType\": \"labels.text.fill\", \"stylers\": [ { \"color\": \"#523735\" } ] }," +
-                    "  { \"elementType\": \"labels.text.stroke\", \"stylers\": [ { \"color\": \"#f5f1e6\" } ] }," +
-                    "  { \"featureType\": \"administrative\", \"elementType\": \"geometry.stroke\", \"stylers\": [ { \"color\": \"#c9b2a6\" } ] }," +
-                    "  { \"featureType\": \"road\", \"elementType\": \"geometry\", \"stylers\": [ { \"color\": \"#f5f1e6\" } ] }," +
-                    "  { \"featureType\": \"water\", \"elementType\": \"geometry.fill\", \"stylers\": [ { \"color\": \"#b9d3c2\" } ] }" +
-                    "]"
-            )
+            mapStyleOptions = MapStyleOptions(DARK_MAP_STYLE_JSON)
         )
     }
 

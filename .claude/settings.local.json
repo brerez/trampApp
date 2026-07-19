@@ -33,7 +33,25 @@
       "Bash(grep -E \"\\\\.kt$\")",
       "Bash(grep \"\\\\.kt$\")",
       "Bash(chmod +x /tmp/scan_transcripts.sh)",
-      "Bash(bash /tmp/scan_transcripts.sh)"
+      "Bash(bash /tmp/scan_transcripts.sh)",
+      "WebFetch(domain:api.golemio.cz)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(/c/Users/erezb/AppData/Local/Android/Sdk/platform-tools/adb.exe devices *)",
+      "Bash(where handle *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'java.exe'} | Select-Object ProcessId, CreationDate | Format-Table -AutoSize)",
+      "PowerShell(Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'java.exe'} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue })",
+      "Bash(\"/c/Program Files/Microsoft/jdk-17.0.18.8-hotspot/bin/jstack.exe\" 35756)",
+      "Read(//tmp/**)",
+      "PowerShell(Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'java.exe'} | Select-Object ProcessId,CreationDate | Format-Table -AutoSize)",
+      "Bash(\"/c/Program Files/Microsoft/jdk-17.0.18.8-hotspot/bin/jstack.exe\" 2780)",
+      "Bash(nohup /c/Users/erezb/AppData/Local/Android/Sdk/emulator/emulator.exe -avd Samsung_Galaxy_S22)",
+      "Bash(echo \"launched with pid $!\")",
+      "Bash(/c/Users/erezb/AppData/Local/Android/Sdk/platform-tools/adb.exe shell *)",
+      "Bash(/c/Users/erezb/AppData/Local/Android/Sdk/platform-tools/adb.exe logcat *)",
+      "Bash(/c/Users/erezb/AppData/Local/Android/Sdk/platform-tools/adb.exe pull *)",
+      "Bash(MSYS_NO_PATHCONV=1 /c/Users/erezb/AppData/Local/Android/Sdk/platform-tools/adb.exe pull /sdcard/Pictures/trampapp-screenshots ./app/build/screenshots)"
     ]
   }
 }

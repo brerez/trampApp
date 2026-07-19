@@ -5,15 +5,20 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.Accessible
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tramapp.ui.theme.*
@@ -62,7 +67,10 @@ fun TramRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -79,8 +87,15 @@ fun TramRow(
                 )
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(tram.trip.headsign, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Column(modifier = Modifier.weight(1f, fill = false)) {
+                Text(
+                    tram.trip.headsign,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 if (subtitleText != null) {
                     Text(subtitleText, color = accentColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
@@ -96,12 +111,39 @@ fun TramRow(
                     .clickable { onFavoriteClick() }
                     .padding(8.dp)
             )
+            // U9 (R9, R21): small, monochrome amenity glyphs — never a relevance color —
+            // rendered only when the flag is known (non-null), left of the countdown.
+            if (smartDeparture.isAccessible == true) {
+                Icon(
+                    imageVector = Icons.Filled.Accessible,
+                    contentDescription = "Wheelchair accessible",
+                    tint = TextSecondary,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .testTag("amenity-glyph")
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            if (smartDeparture.isAirConditioned == true) {
+                Icon(
+                    imageVector = Icons.Filled.AcUnit,
+                    contentDescription = "Air conditioned",
+                    tint = TextSecondary,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .testTag("amenity-glyph")
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
             Spacer(modifier = Modifier.width(4.dp))
+            // R19: countdown is the primary cue — fontSize/weight never shrink for glyphs.
             Text(
                 timeText,
                 color = if (isHighlighted) accentColor else Color.White,
                 fontWeight = FontWeight.ExtraBold,
-                fontSize = 16.sp
+                fontSize = 16.sp,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

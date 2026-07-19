@@ -31,21 +31,32 @@ class DashboardViewModel @Inject constructor(
 
     var ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 
+    /**
+     * Test seam: gates the unbounded `while (autoRefreshEnabled) { delay(...); ... }`
+     * background loops started below/in [init]. Production default is `true`. Unit tests
+     * MUST set this to `false` immediately after construction (before the first dispatcher
+     * advance) — otherwise these intentionally-infinite loops keep the shared
+     * `TestCoroutineScheduler` non-idle forever, and `runTest`'s implicit final
+     * advance-to-idle check hangs. Checked at the top of each loop iteration so an in-flight
+     * `delay` still completes cleanly but the loop exits before scheduling the next one.
+     */
+    var autoRefreshEnabled: Boolean = true
+
     val currentLocation: StateFlow<LatLng> = locationStateManager.activeLocation
     val isManualLocation: StateFlow<Boolean> = locationStateManager.isManual
 
     private val _currentNearbyStationIds = MutableStateFlow<Set<String>>(emptySet())
 
     private val _rawStationDepartures = MutableStateFlow<Map<String, List<SmartDeparture>>>(emptyMap())
-    
+
     val favorites: StateFlow<Set<String>> = preferencesManager.userPreferences.map { it.favorites }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
-        
+
     val favoritesFirst: StateFlow<Boolean> = preferencesManager.userPreferences.map { it.favoritesFirst }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val currentTime: StateFlow<java.time.OffsetDateTime> = flow {
-        while (true) {
+        while (autoRefreshEnabled) {
             emit(java.time.OffsetDateTime.now())
             kotlinx.coroutines.delay(10000) // Tick every 10 seconds
         }
@@ -92,10 +103,10 @@ class DashboardViewModel @Inject constructor(
                 val dLat = (it.latitude - loc.latitude) * 111000.0
                 val dLng = (it.longitude - loc.longitude) * 71000.0
                 (dLat * dLat + dLng * dLng) <= (maxDist * maxDist).toDouble()
-            }.toSet()
+            }.map { it.id }.toSet()
         }
 
-        all.filter { it.id in nearbyIds }
+        val sorted = all.filter { it.id in nearbyIds }
             .sortedWith(Comparator { a, b ->
                 val aFav = if (favsFirst) favs.contains(a.name) else false
                 val bFav = if (favsFirst) favs.contains(b.name) else false
@@ -106,7 +117,11 @@ class DashboardViewModel @Inject constructor(
                             (b.longitude - loc.longitude).let { it * it }
                 aDist.compareTo(bDist)
             })
-            .take(count)
+        // `count` is a number of distinct physical stations (matches the "Load N more
+        // stations" affordance and the header's station count), not raw platform rows — a
+        // plain take(count) on ungrouped platforms could burn the whole cap on 2-3 platforms
+        // of a single station, silently hiding other nearby stations entirely.
+        selectStationsByName(sorted, count)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val hasMoreStations: StateFlow<Boolean> = combine(
@@ -136,6 +151,91 @@ class DashboardViewModel @Inject constructor(
 
     private val _loadingStations = MutableStateFlow<Set<String>>(emptySet())
     val loadingStations: StateFlow<Set<String>> = _loadingStations.asStateFlow()
+
+    // U4 (R1-R4, R24): explicit per-platform-id UI state, keyed by StationEntity.id.
+    private val _stationStates = MutableStateFlow<Map<String, StationUiState>>(emptyMap())
+    val stationStates: StateFlow<Map<String, StationUiState>> = _stationStates.asStateFlow()
+
+    /**
+     * Derived, ordered station groups (platforms sharing a base name). A group is promoted
+     * to [StationRow.isReady] once any platform is [StationUiState.Ready] with departures;
+     * it then holds a stable position (partitioned, not re-sorted) even while sibling
+     * platforms are still resolving or re-fetching. Fully-[StationUiState.Empty] groups are
+     * excluded. Order preserves [visibleStations]' favorites-first/distance sort as a stable
+     * pre-sort key (KTD2).
+     */
+    val visibleStationRows: StateFlow<List<StationRow>> = combine(
+        visibleStations,
+        _stationStates,
+        currentLocation,
+        favorites,
+        favoritesFirst
+    ) { stations, states, loc, favs, favsFirst ->
+        if (stations.isEmpty()) return@combine emptyList()
+
+        val stationById = stations.associateBy { it.id }
+        val groupPlatformIds = LinkedHashMap<String, MutableList<String>>()
+        for (station in stations) {
+            val baseName = station.name.replace(Regex("\\s*\\[.*]$"), "").trim()
+            groupPlatformIds.getOrPut(baseName) { mutableListOf() }.add(station.id)
+        }
+
+        val readyGroups = mutableListOf<StationRow>()
+        val loadingGroups = mutableListOf<StationRow>()
+
+        for ((baseName, platformIds) in groupPlatformIds) {
+            val platformDepartures = mutableListOf<Pair<String, List<SmartDeparture>>>()
+            var anyReadyWithDeps = false
+            var anyUnresolved = false
+
+            for (platformId in platformIds) {
+                val label = Regex("\\[(.*)]$").find(stationById[platformId]?.name ?: "")
+                    ?.groupValues?.get(1) ?: platformId
+                when (val state = states[platformId]) {
+                    is StationUiState.Ready -> {
+                        if (state.departures.isNotEmpty()) anyReadyWithDeps = true
+                        // U6 (R5/R6): favorites are a pure overlay — a stable sort of already-
+                        // Ready lines within this platform, never gating/reordering the row itself.
+                        val departures = if (favsFirst) {
+                            state.departures.sortedByDescending { favs.contains(it.item.route.shortName) }
+                        } else {
+                            state.departures
+                        }
+                        platformDepartures.add(label to departures)
+                    }
+                    StationUiState.Loading, null -> {
+                        anyUnresolved = true
+                        platformDepartures.add(label to emptyList())
+                    }
+                    StationUiState.Empty -> {
+                        platformDepartures.add(label to emptyList())
+                    }
+                }
+            }
+
+            val distanceSq = platformIds.mapNotNull { stationById[it] }.minOfOrNull { station ->
+                val dLat = station.latitude - loc.latitude
+                val dLng = station.longitude - loc.longitude
+                dLat * dLat + dLng * dLng
+            } ?: Double.MAX_VALUE
+
+            val row = StationRow(
+                baseName = baseName,
+                platformIds = platformIds.toList(),
+                platformDepartures = platformDepartures,
+                isReady = anyReadyWithDeps,
+                distanceSq = distanceSq
+            )
+
+            when {
+                anyReadyWithDeps -> readyGroups.add(row)
+                anyUnresolved -> loadingGroups.add(row)
+                // else: every platform settled Empty -> collapsed out entirely
+            }
+        }
+
+        readyGroups + loadingGroups
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     
     private val _selectedTripDetails = MutableStateFlow<com.example.tramapp.domain.TripDetails?>(null)
     val selectedTripDetails: StateFlow<com.example.tramapp.domain.TripDetails?> = _selectedTripDetails.asStateFlow()
@@ -159,11 +259,34 @@ class DashboardViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    private val _lastUpdateTime = MutableStateFlow(System.currentTimeMillis())
+
+    // U10 (R10, R11): a real AppStatus fed to the header's CompactStatusIndicator, replacing
+    // the "Debug: N API calls" string. LOADING while any station is fetching, ERROR while
+    // throttled, ONLINE otherwise. lastUpdateTime is set on each successful refreshStation.
+    val appStatus: StateFlow<com.example.tramapp.ui.components.AppStatus> = combine(
+        loadingStations,
+        throttleMessage,
+        _lastUpdateTime
+    ) { loading, throttle, lastUpdate ->
+        val connection = when {
+            throttle != null -> com.example.tramapp.ui.components.ConnectionStatus.ERROR
+            loading.isNotEmpty() -> com.example.tramapp.ui.components.ConnectionStatus.LOADING
+            else -> com.example.tramapp.ui.components.ConnectionStatus.ONLINE
+        }
+        com.example.tramapp.ui.components.AppStatus(connection = connection, lastUpdateTime = lastUpdate)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        com.example.tramapp.ui.components.AppStatus()
+    )
+
     private val _loadMoreChannel = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private var tripFetchJob: kotlinx.coroutines.Job? = null
     private val stationJobs = mutableMapOf<String, Job>()
     private val enrichmentJobs = mutableMapOf<String, Job>()
     private var visibleStationsFetchJob: Job? = null
+    private var manualRefreshInFlight = false
 
     init {
         viewModelScope.launch {
@@ -223,8 +346,9 @@ class DashboardViewModel @Inject constructor(
 
         // Step 7: Periodic departures refresh every 60s
         viewModelScope.launch {
-            while (true) {
+            while (autoRefreshEnabled) {
                 kotlinx.coroutines.delay(60000)
+                if (!autoRefreshEnabled) break
                 val visible = visibleStations.value
                 for (station in visible) {
                     refreshStation(station.id)
@@ -278,7 +402,7 @@ class DashboardViewModel @Inject constructor(
     private fun startDepartureLoop() {
         viewModelScope.launch {
             _currentNearbyStationIds.collectLatest { stationIds ->
-                if (stationIds.isEmpty()) return@collectLatest
+                if (stationIds.isEmpty() || manualRefreshInFlight) return@collectLatest
                 val loc = currentLocation.value
                 val prefs = preferencesManager.userPreferences.first()
 
@@ -292,8 +416,11 @@ class DashboardViewModel @Inject constructor(
                         dLat * dLat + dLng * dLng
                     }
 
-                val groupsToLoad = selectStationsByName(sortedStations, 2) // Limit to top 2 stations
-                groupsToLoad.take(6).forEach { station -> // Max 6 platforms total
+                // Must cover every currently-visible station, not a fixed subset — anything
+                // left out here has no other prompt fetch path and would otherwise sit as a
+                // spinning skeleton until the 60s periodic sweep (init step 7) gets to it.
+                val groupsToLoad = selectStationsByName(sortedStations, _visibleStationCount.value)
+                groupsToLoad.forEach { station ->
                     refreshStation(station.id)
                     kotlinx.coroutines.delay(500) // Increase delay between platform loads
                 }
@@ -302,8 +429,9 @@ class DashboardViewModel @Inject constructor(
 
         // Periodic re-trigger every 30s to keep data fresh (increased from 15s)
         viewModelScope.launch(ioDispatcher) {
-            while (true) {
+            while (autoRefreshEnabled) {
                 kotlinx.coroutines.delay(30000)
+                if (!autoRefreshEnabled) break
                 val loc = currentLocation.value
                 val prefs = preferencesManager.userPreferences.first()
                 try {
@@ -311,7 +439,13 @@ class DashboardViewModel @Inject constructor(
                         loc.latitude, loc.longitude,
                         prefs.displayRadius
                     )
-                    if (ids.isNotEmpty()) _currentNearbyStationIds.value = ids.toSet()
+                    // Union, never replace: refreshNearbyStations' own cache-freshness check
+                    // uses a much tighter radius than a full live scan, so a routine periodic
+                    // rescan at an unchanged location can legitimately return a far smaller
+                    // "still fresh" subset than what's already known — replacing the set with
+                    // that subset silently dropped already-valid, currently-displayed stations
+                    // out of view every ~30s.
+                    if (ids.isNotEmpty()) _currentNearbyStationIds.value = _currentNearbyStationIds.value + ids.toSet()
                 } catch (e: Exception) { 
                     android.util.Log.w("DashboardViewModel", "Failed to update nearby stations in background", e)
                 }
@@ -348,20 +482,31 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             val loc = currentLocation.value
             _status.value = "Refreshing..."
+            // U7 (R13): refreshNow() already comprehensively refreshes every visible station
+            // itself (nearest-first, below). Suppress startDepartureLoop()'s reactive
+            // bootstrap refresh — which also fires off the _currentNearbyStationIds write two
+            // lines down — so the same platform isn't fetched twice in one manual refresh.
+            manualRefreshInFlight = true
             try {
                 val ids = repository.refreshNearbyStations(loc.latitude, loc.longitude, 1500)
-                _currentNearbyStationIds.value = ids.toSet()
-                
-                // Refresh all currently visible stations' departures immediately
+                // Union, not replace — see the periodic-rescan comment in startDepartureLoop():
+                // a manual refresh must never make already-visible stations disappear because
+                // this call's cache-freshness check happened to return a narrower set.
+                if (ids.isNotEmpty()) _currentNearbyStationIds.value = _currentNearbyStationIds.value + ids.toSet()
+
+                // Refresh all currently visible stations' departures immediately, nearest-first
+                // ([visibleStations] is itself distance-sorted).
                 val visible = visibleStations.value
                 for (station in visible) {
                     refreshStation(station.id)
                     kotlinx.coroutines.delay(300)
                 }
-                
+
                 _status.value = "Updated"
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"
+            } finally {
+                manualRefreshInFlight = false
             }
         }
     }
@@ -420,29 +565,59 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refreshStation(stationId: String) {
+        // U7 (R13): reserve the loading slot synchronously, before scheduling the coroutine.
+        // Two same-tick callers (e.g. refreshNow()'s explicit loop and startDepartureLoop()'s
+        // reactive re-trigger, both fired off one _currentNearbyStationIds update) would
+        // otherwise both pass this guard before either sets it, doubling the API call.
+        if (_loadingStations.value.contains(stationId)) return
+        _loadingStations.value += stationId
+        // Only demote to Loading (which renders a bare skeleton, replacing the whole card) if
+        // there's nothing to show yet. A periodic background refresh of an already-Ready
+        // station must not blow away its visible departures for the ~1-2s round trip — the UI
+        // already surfaces "refetching" via `loadingStations`/`isRefetching` without hiding the
+        // existing data. Without this guard, every routine 30-60s auto-refresh briefly wiped
+        // every visible station back to a skeleton, collapsing the whole list.
+        if (_stationStates.value[stationId] !is StationUiState.Ready) {
+            _stationStates.value = _stationStates.value + (stationId to StationUiState.Loading)
+        }
+
         stationJobs[stationId]?.cancel()
         stationJobs[stationId] = viewModelScope.launch {
-            if (_loadingStations.value.contains(stationId)) return@launch
-            _loadingStations.value += stationId
             try {
                 val prefs = preferencesManager.userPreferences.first()
                 val stationName = repository.allStations.first().find { it.id == stationId }?.name ?: "Unknown"
 
                 // PRIORITY 1: Get trams immediately (non-blocking)
                 val deps = getSmartDepartures.execute(stationId, prefs)
-                
+                val futureTrams = filterFutureTrams(deps).take(5)
+
                 val currentMap = _rawStationDepartures.value.toMutableMap()
-                currentMap[stationId] = deps.take(5)
+                currentMap[stationId] = futureTrams
                 _rawStationDepartures.value = currentMap
 
+                _stationStates.value = _stationStates.value + (stationId to
+                    if (futureTrams.isNotEmpty()) StationUiState.Ready(futureTrams) else StationUiState.Empty)
+                _lastUpdateTime.value = System.currentTimeMillis()
+
                 // 3. Enrich with directional info (async, serial to avoid API limits)
-                enrichStation(stationId, stationName, deps.take(5), prefs)
+                enrichStation(stationId, stationName, futureTrams, prefs)
             } catch (e: Exception) {
                 android.util.Log.w("DashboardViewModel", "Failed to refresh station $stationId", e)
             } finally {
                 _loadingStations.value -= stationId
                 stationJobs.remove(stationId)
             }
+        }
+    }
+
+    /** Future, in-service trams only (R1-R3): mirrors [loadCachedDepartures]'s filter. */
+    private fun filterFutureTrams(deps: List<SmartDeparture>): List<SmartDeparture> {
+        val now = java.time.OffsetDateTime.now()
+        return deps.filter { dep ->
+            try {
+                val t = java.time.OffsetDateTime.parse(dep.item.arrival.predicted ?: dep.item.arrival.scheduled)
+                t.isAfter(now) && dep.item.route.type == 0
+            } catch (e: Exception) { false }
         }
     }
 
@@ -477,6 +652,11 @@ class DashboardViewModel @Inject constructor(
                 val currentMap = _rawStationDepartures.value.toMutableMap()
                 currentMap[stationId] = updatedDeps
                 _rawStationDepartures.value = currentMap
+
+                // Patch the Ready payload in place; never demotes/reorders (KTD3).
+                if (_stationStates.value[stationId] is StationUiState.Ready) {
+                    _stationStates.value = _stationStates.value + (stationId to StationUiState.Ready(updatedDeps))
+                }
             }
             enrichmentJobs.remove(stationId)
         }

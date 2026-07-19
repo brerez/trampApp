@@ -68,18 +68,18 @@ class TramRepository @Inject constructor(
             val dLat = s.latitude - lat
             val dLng = s.longitude - lng
             val distSq = dLat * dLat + dLng * dLng
-            
+
             val updateTime = java.time.Instant.ofEpochMilli(s.lastUpdate)
                 .atZone(java.time.ZoneId.systemDefault())
             val hour = updateTime.hour
             val isNightDecision = hour >= 23 || hour < 6 // 11 PM to 6 AM
-            
+
             val isStale = s.isTram == false && isNightDecision && s.lastUpdate < sixAmToday && now >= sixAmToday
             val isAllowed = s.isTram != false || isStale
-            
+
             distSq < 0.000001 && (now - s.lastUpdate < 24 * 60 * 60 * 1000) && isAllowed
         }
-        
+
         if (recentNearby.isNotEmpty()) {
             return recentNearby.map { s: com.example.tramapp.data.local.entity.StationEntity -> s.id }
         }
@@ -130,7 +130,9 @@ class TramRepository @Inject constructor(
                 headsign = item.trip.headsign,
                 arrivalTime = item.arrival.predicted ?: item.arrival.scheduled,
                 isPredicted = item.arrival.predicted != null,
-                tripId = item.trip.tripId
+                tripId = item.trip.tripId,
+                isAccessible = item.trip.isWheelchairAccessible,
+                isAirConditioned = item.trip.isAirConditioned
             )
         }
         departureDao.insertDepartures(entities)
@@ -141,7 +143,12 @@ class TramRepository @Inject constructor(
         return entities.map { entity ->
             DepartureItem(
                 route = com.example.tramapp.data.remote.RouteInfo(entity.routeShortName, entity.routeType),
-                trip = com.example.tramapp.data.remote.TripInfo(entity.headsign, entity.tripId),
+                trip = com.example.tramapp.data.remote.TripInfo(
+                    entity.headsign,
+                    entity.tripId,
+                    entity.isAccessible,
+                    entity.isAirConditioned
+                ),
                 arrival = com.example.tramapp.data.remote.TimestampInfo(entity.arrivalTime, if (entity.isPredicted) entity.arrivalTime else null),
                 stop = com.example.tramapp.data.remote.StopInfo(entity.stopId)
             )

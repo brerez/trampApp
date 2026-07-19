@@ -11,15 +11,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,35 +33,19 @@ fun StationGroupCard(
     now: OffsetDateTime,
     onExpandToggle: () -> Unit,
     onFavoriteClick: (String) -> Unit,
-    onTramClick: (String, String, String) -> Unit
+    onTramClick: (String, String, String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val allDeps = platformDepartures.flatMap { it.second }
-    val isAnyHomeBound = allDeps.any { it.isHomeBound }
-    val isAnyWorkBound = allDeps.any { it.isWorkBound }
-    val isAnySchoolBound = allDeps.any { it.isSchoolBound }
-    val isHighlighted = isAnyHomeBound || isAnyWorkBound || isAnySchoolBound
-    val highlightColor = when {
-        isAnyHomeBound -> HomeGlow
-        isAnyWorkBound -> WorkGlow
-        isAnySchoolBound -> SchoolGlow
-        else -> GlassBorder
-    }
-
+    // U9/R20 (KTD5): the colored line badge is the single primary relevance cue and the
+    // "Towards …" subtitle (rendered per-row in TramRow) is the one allowed secondary — no
+    // card-level color. The gradient border + emoji destination-badge row are removed.
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(SurfaceGlass)
             .clickable { onExpandToggle() }
-            .border(
-                width = if (isHighlighted) 2.dp else 1.dp,
-                brush = if (isHighlighted) {
-                    Brush.linearGradient(listOf(highlightColor, highlightColor.copy(alpha = 0.5f)))
-                } else {
-                    SolidColor(GlassBorder)
-                },
-                shape = RoundedCornerShape(28.dp)
-            )
+            .border(width = 1.dp, color = GlassBorder, shape = RoundedCornerShape(28.dp))
             .padding(20.dp)
     ) {
         // Station name + Expand Icon
@@ -74,7 +55,7 @@ fun StationGroupCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(baseName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            
+
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
@@ -87,16 +68,6 @@ fun StationGroupCard(
                     contentDescription = null,
                     tint = TextSecondary
                 )
-            }
-        }
-
-        // Destination badges
-        if (isHighlighted) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (isAnyHomeBound) DestinationBadge("🏠 HOME", HomeGlow)
-                if (isAnyWorkBound) DestinationBadge("💼 WORK", WorkGlow)
-                if (isAnySchoolBound) DestinationBadge("🎓 SCHOOL", SchoolGlow)
             }
         }
 
@@ -158,18 +129,40 @@ fun StationGroupCard(
     }
 }
 
+/**
+ * U5 (R1, R4): a still-resolving station's placeholder. Deliberately distinct from the
+ * populated [StationGroupCard] shape (own name label + shimmer bars, no expand chevron, no
+ * departure rows) so it can never be mistaken for a populated card with "no trams" — that
+ * misreading is exactly what the state-model rework replaces.
+ */
 @Composable
-fun DestinationBadge(label: String, color: Color) {
-    Surface(
-        color = color.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(10.dp)
+fun StationSkeletonCard(
+    baseName: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(SurfaceGlass)
+            .border(width = 1.dp, color = GlassBorder, shape = RoundedCornerShape(28.dp))
+            .padding(20.dp)
     ) {
-        Text(
-            label,
-            color = color,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(baseName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = AccentCyan,
+                strokeWidth = 2.dp
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        SkeletonRow(width = 220.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        SkeletonRow(width = 160.dp)
     }
 }

@@ -115,11 +115,17 @@ fun StatusIndicator(
 
 /**
  * Compact status indicator for header display.
+ *
+ * U10 (R10, R11): when idle/[ConnectionStatus.ONLINE] and [now] is supplied, shows a muted
+ * freshness cue ("Updated Xs ago" / "Updated Xm ago") instead of a static "Online" label —
+ * this is the app's real activity signal, replacing the removed debug API-call counter.
+ * LOADING/ERROR stay visibly distinct text so a stalled/errored refresh doesn't read as fresh.
  */
 @Composable
 fun CompactStatusIndicator(
     status: AppStatus?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    now: Long? = null
 ) {
     val connectionColor = when (status?.connection) {
         ConnectionStatus.ONLINE -> AccentCyan.copy(alpha = 0.6f)
@@ -130,7 +136,9 @@ fun CompactStatusIndicator(
     }
 
     val statusText = when (status?.connection) {
-        ConnectionStatus.ONLINE -> "Online"
+        ConnectionStatus.ONLINE -> if (now != null && status != null) {
+            freshnessText(now - status.lastUpdateTime)
+        } else "Online"
         ConnectionStatus.OFFLINE -> "Offline"
         ConnectionStatus.LOADING -> "Loading..."
         ConnectionStatus.ERROR -> "Error"
@@ -144,4 +152,13 @@ fun CompactStatusIndicator(
         fontWeight = FontWeight.Light,
         modifier = modifier
     )
+}
+
+private fun freshnessText(elapsedMillis: Long): String {
+    val elapsedSeconds = (elapsedMillis / 1000).coerceAtLeast(0)
+    return when {
+        elapsedSeconds < 5 -> "Updated just now"
+        elapsedSeconds < 60 -> "Updated ${elapsedSeconds}s ago"
+        else -> "Updated ${elapsedSeconds / 60}m ago"
+    }
 }
