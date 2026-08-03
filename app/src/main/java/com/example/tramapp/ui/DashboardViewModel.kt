@@ -13,6 +13,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
@@ -270,7 +272,6 @@ class DashboardViewModel @Inject constructor(
         _lastUpdateTime
     ) { loading, throttle, lastUpdate ->
         val connection = when {
-            throttle != null -> com.example.tramapp.ui.components.ConnectionStatus.ERROR
             loading.isNotEmpty() -> com.example.tramapp.ui.components.ConnectionStatus.LOADING
             else -> com.example.tramapp.ui.components.ConnectionStatus.ONLINE
         }
@@ -287,6 +288,7 @@ class DashboardViewModel @Inject constructor(
     private val enrichmentJobs = mutableMapOf<String, Job>()
     private var visibleStationsFetchJob: Job? = null
     private var manualRefreshInFlight = false
+    private val enrichmentMutex = kotlinx.coroutines.sync.Mutex()
 
     init {
         viewModelScope.launch {
@@ -625,37 +627,39 @@ class DashboardViewModel @Inject constructor(
         enrichmentJobs[stationId]?.cancel()
         enrichmentJobs[stationId] = viewModelScope.launch {
             val loc = currentLocation.value ?: return@launch
-            val updatedDeps = departures.toMutableList()
-            var anyChanged = false
-            for (i in updatedDeps.indices) {
-                ensureActive()
-                val smartDep = updatedDeps[i]
-                try {
-                    val bounds = getSmartDepartures.checkBounds(smartDep.item, stationName, prefs, loc.latitude, loc.longitude)
-                    if (bounds.first != smartDep.isHomeBound || bounds.second != smartDep.isWorkBound || bounds.third != smartDep.isSchoolBound) {
-                        updatedDeps[i] = smartDep.copy(
-                            isHomeBound = bounds.first,
-                            isWorkBound = bounds.second,
-                            isSchoolBound = bounds.third
-                        )
-                        anyChanged = true
+            enrichmentMutex.withLock {
+                val updatedDeps = departures.toMutableList()
+                var anyChanged = false
+                for (i in updatedDeps.indices) {
+                    ensureActive()
+                    val smartDep = updatedDeps[i]
+                    try {
+                        val bounds = getSmartDepartures.checkBounds(smartDep.item, stationName, prefs, loc.latitude, loc.longitude)
+                        if (bounds.first != smartDep.isHomeBound || bounds.second != smartDep.isWorkBound || bounds.third != smartDep.isSchoolBound) {
+                            updatedDeps[i] = smartDep.copy(
+                                isHomeBound = bounds.first,
+                                isWorkBound = bounds.second,
+                                isSchoolBound = bounds.third
+                            )
+                            anyChanged = true
+                        }
+                        // Small delay between trams
+                        kotlinx.coroutines.delay(150)
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        android.util.Log.w("DashboardViewModel", "Failed to check bounds for departure", e)
                     }
-                    // Small delay between trams
-                    kotlinx.coroutines.delay(150)
-                } catch (e: Exception) { 
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.w("DashboardViewModel", "Failed to check bounds for departure", e)
                 }
-            }
 
-            if (anyChanged) {
-                val currentMap = _rawStationDepartures.value.toMutableMap()
-                currentMap[stationId] = updatedDeps
-                _rawStationDepartures.value = currentMap
+                if (anyChanged) {
+                    val currentMap = _rawStationDepartures.value.toMutableMap()
+                    currentMap[stationId] = updatedDeps
+                    _rawStationDepartures.value = currentMap
 
-                // Patch the Ready payload in place; never demotes/reorders (KTD3).
-                if (_stationStates.value[stationId] is StationUiState.Ready) {
-                    _stationStates.value = _stationStates.value + (stationId to StationUiState.Ready(updatedDeps))
+                    // Patch the Ready payload in place; never demotes/reorders (KTD3).
+                    if (_stationStates.value[stationId] is StationUiState.Ready) {
+                        _stationStates.value = _stationStates.value + (stationId to StationUiState.Ready(updatedDeps))
+                    }
                 }
             }
             enrichmentJobs.remove(stationId)

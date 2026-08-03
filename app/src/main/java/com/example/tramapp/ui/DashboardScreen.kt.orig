@@ -41,7 +41,7 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.*
 // Assuming StationEntity is available in the project. If not, we might need to import it.
-// import com.example.tramapp.data.StationEntity 
+// import com.example.tramapp.data.StationEntity
 
 @Composable
 fun DashboardScreen(
@@ -130,7 +130,9 @@ fun DashboardScreen(
                 ErrorBanner(
                     error = ErrorState(
                         type = ErrorType.NETWORK,
-                        message = throttleMessage!!
+                        message = throttleMessage!!,
+                        canRetry = true,
+                        retryAction = { viewModel.refreshNow() }
                     )
                 )
             }
