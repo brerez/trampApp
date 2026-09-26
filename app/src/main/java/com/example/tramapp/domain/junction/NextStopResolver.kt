@@ -40,7 +40,7 @@ data class TripNextStop(
 class NextStopResolver @Inject constructor(
     private val source: TripSequenceSource,
     private val dao: TripNextStopDao,
-) {
+) : NextStopLookup {
     /** Test seam: override to control time. */
     var clock: () -> Long = System::currentTimeMillis
 
@@ -138,7 +138,7 @@ class NextStopResolver @Inject constructor(
      * Resolve many platforms of a junction concurrently (still sharing the 4-fetch cap).
      * Key = platformStopId.
      */
-    suspend fun resolveAll(departuresByPlatform: Map<String, List<DepartureItem>>): Map<String, Map<String, TripNextStop>> {
+    override suspend fun resolveAll(departuresByPlatform: Map<String, List<DepartureItem>>): Map<String, Map<String, TripNextStop>> {
         return coroutineScope {
             departuresByPlatform.map { (platformStopId, deps) ->
                 async { platformStopId to resolve(platformStopId, deps) }
@@ -146,7 +146,7 @@ class NextStopResolver @Inject constructor(
         }
     }
 
-    suspend fun cachedAll(departuresByPlatform: Map<String, List<DepartureItem>>): Map<String, Map<String, TripNextStop>> {
+    override suspend fun cachedAll(departuresByPlatform: Map<String, List<DepartureItem>>): Map<String, Map<String, TripNextStop>> {
         return coroutineScope {
             departuresByPlatform.map { (platformStopId, deps) ->
                 async { platformStopId to cached(platformStopId, deps) }
