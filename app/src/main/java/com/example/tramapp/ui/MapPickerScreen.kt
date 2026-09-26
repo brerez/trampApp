@@ -109,6 +109,7 @@ fun MapPickerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(SurfaceGlass)
+                        .navigationBarsPadding()
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
