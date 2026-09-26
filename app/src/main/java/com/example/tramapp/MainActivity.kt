@@ -1,5 +1,6 @@
 package com.example.tramapp
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -38,9 +39,18 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @javax.inject.Inject lateinit var deepLinkState: com.example.tramapp.glance.DeepLinkState
+
+    companion object {
+        const val EXTRA_JUNCTION_ID = "junction_id"
+        const val EXTRA_REQUEST_PERMISSIONS = "request_permissions"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        consumeIntentExtras(intent)
         setContent {
             TramAppTheme {
                 val context = androidx.compose.ui.platform.LocalContext.current
@@ -49,12 +59,14 @@ class MainActivity : ComponentActivity() {
                 ) { /* Handle results if needed */ }
 
                 androidx.compose.runtime.LaunchedEffect(Unit) {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            android.Manifest.permission.ACCESS_FINE_LOCATION,
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
+                    val permissions = mutableListOf(
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
                     )
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    permissionLauncher.launch(permissions.toTypedArray())
                 }
 
                 val navController = rememberNavController()
@@ -139,6 +151,34 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeIntentExtras(intent)
+    }
+
+    /** R4 (notification tap -> junction_id) and the tile's permission-request deep link. */
+    private fun consumeIntentExtras(intent: Intent?) {
+        intent ?: return
+        intent.getStringExtra(EXTRA_JUNCTION_ID)?.let { junctionId ->
+            deepLinkState.setJunctionId(junctionId)
+        }
+        if (intent.getBooleanExtra(EXTRA_REQUEST_PERMISSIONS, false)) {
+            requestRuntimePermissions()
+        }
+    }
+
+    private fun requestRuntimePermissions() {
+        val permissions = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        androidx.core.app.ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 1)
     }
 }
 

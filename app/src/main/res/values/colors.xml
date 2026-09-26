@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Junction glance notification (U78). Deliberately not the theme's dark palette: notification
+         background follows the shade's own light/dark state, not the app theme, so these are chosen
+         to read on either. -->
+    <color name="notification_muted_text">#FF9E9E9E</color>
+    <color name="notification_cancelled_text">#FFD32F2F</color>
+    <color name="notification_badge_text">#FFFFFFFF</color>
+</resources>
