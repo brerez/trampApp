@@ -4,6 +4,7 @@ import com.example.tramapp.data.local.dao.*
 import com.example.tramapp.data.local.entity.*
 import com.example.tramapp.data.remote.DepartureItem
 import com.example.tramapp.data.remote.GolemioService
+import com.example.tramapp.domain.junction.JunctionDepartureSource
 import com.example.tramapp.domain.junction.TripSequenceSource
 import com.example.tramapp.domain.junction.TripStop
 import kotlinx.coroutines.*
@@ -27,7 +28,7 @@ class TramRepository @Inject constructor(
     private val tripRouteDao: TripRouteDao,
     private val lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao,
     private val throttleUtil: com.example.tramapp.utils.ThrottleUtil
-) : TripSequenceSource {
+) : TripSequenceSource, JunctionDepartureSource {
     private val tripFetchMutex = Mutex()
     private val ongoingTripFetches = mutableMapOf<String, Deferred<List<Pair<String, String>>>>()
     val throttleUntil: StateFlow<Long> = throttleUtil.throttleUntil
@@ -131,7 +132,7 @@ class TramRepository @Inject constructor(
      *  (every requested id present as a key, possibly empty list). Updates isTram per platform: true if the
      *  platform has any tram departure, false if it has departures but none are trams, unchanged if none at all.
      *  Uses the existing withRetry (throttle back-off + one retry on 429). Does NOT write the departure cache. */
-    suspend fun getJunctionDepartures(platformIds: List<String>): Map<String, List<DepartureItem>> {
+    override suspend fun getJunctionDepartures(platformIds: List<String>): Map<String, List<DepartureItem>> {
         val response = withRetry { apiService.getDepartureBoards(platformIds) }
         val idSet = platformIds.toSet()
         val byPlatform: Map<String, List<DepartureItem>> = platformIds.associateWith { mutableListOf<DepartureItem>() }
