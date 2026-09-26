@@ -7,6 +7,7 @@ import com.example.tramapp.data.local.dao.ScheduleDao
 import com.example.tramapp.data.local.dao.StationDao
 import com.example.tramapp.data.local.dao.TripRouteDao
 import com.example.tramapp.data.local.dao.LineDirectionDao
+import com.example.tramapp.data.local.dao.TripNextStopDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -51,5 +52,10 @@ object DatabaseModule {
     @Provides
     fun provideLineDirectionDao(database: TramDatabase): LineDirectionDao {
         return database.lineDirectionDao()
+    }
+
+    @Provides
+    fun provideTripNextStopDao(database: TramDatabase): TripNextStopDao {
+        return database.tripNextStopDao()
     }
 }

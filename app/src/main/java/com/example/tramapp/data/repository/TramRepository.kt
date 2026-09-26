@@ -4,6 +4,8 @@ import com.example.tramapp.data.local.dao.*
 import com.example.tramapp.data.local.entity.*
 import com.example.tramapp.data.remote.DepartureItem
 import com.example.tramapp.data.remote.GolemioService
+import com.example.tramapp.domain.junction.TripSequenceSource
+import com.example.tramapp.domain.junction.TripStop
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +27,7 @@ class TramRepository @Inject constructor(
     private val tripRouteDao: TripRouteDao,
     private val lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao,
     private val throttleUtil: com.example.tramapp.utils.ThrottleUtil
-) {
+) : TripSequenceSource {
     private val tripFetchMutex = Mutex()
     private val ongoingTripFetches = mutableMapOf<String, Deferred<List<Pair<String, String>>>>()
     val throttleUntil: StateFlow<Long> = throttleUtil.throttleUntil
@@ -399,5 +401,50 @@ class TramRepository @Inject constructor(
             
             emit(initialDetails.copy(stations = updatedStations))
         }
+    }
+
+    // ---- TripSequenceSource implementation ----
+
+    override suspend fun tripStops(tripId: String): List<TripStop> {
+        val response = withRetry {
+            apiService.getTripDetails(tripId, includeStopTimes = true, includeShapes = false)
+        }
+        val allStations = stationDao.getAllStations().first()
+        return response.stopTimes.map { st ->
+            TripStop(
+                stopId = st.stopId,
+                sequence = st.stopSequence,
+                name = st.stop?.stopName
+                    ?: allStations.find { s -> s.id == st.stopId }
+                        ?.name?.replace(Regex("\\s*\\[.*]$"), "")?.trim()
+            )
+        }
+    }
+
+    override suspend fun stopNames(stopIds: List<String>): Map<String, String> {
+        if (stopIds.isEmpty()) return emptyMap()
+        // Check station cache first
+        val allStations = stationDao.getAllStations().first()
+        val result = mutableMapOf<String, String>()
+        val stillMissing = mutableListOf<String>()
+        for (id in stopIds) {
+            val cached = allStations.find { s -> s.id == id }
+            if (cached != null) {
+                result[id] = cached.name.replace(Regex("\\s*\\[.*]$"), "").trim()
+            } else {
+                stillMissing.add(id)
+            }
+        }
+        if (stillMissing.isNotEmpty()) {
+            try {
+                val response = withRetry { apiService.getStopsByIds(stillMissing) }
+                response.features.forEach { feature ->
+                    result[feature.properties.stopId] = feature.properties.stopName
+                }
+            } catch (e: Exception) {
+                // Best-effort; callers handle missing names gracefully
+            }
+        }
+        return result
     }
 }
