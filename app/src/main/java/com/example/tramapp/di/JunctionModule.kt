@@ -3,6 +3,7 @@ package com.example.tramapp.di
 import com.example.tramapp.data.repository.TramRepository
 import com.example.tramapp.domain.junction.DestinationNodeSource
 import com.example.tramapp.domain.junction.JunctionDepartureSource
+import com.example.tramapp.domain.junction.JunctionStationSource
 import com.example.tramapp.domain.junction.NextStopLookup
 import com.example.tramapp.domain.junction.NextStopResolver
 import com.example.tramapp.domain.junction.PreferencesDestinationNodeSource
@@ -20,6 +21,9 @@ abstract class JunctionModule {
 
     @Binds
     abstract fun bindJunctionDepartureSource(repo: TramRepository): JunctionDepartureSource
+
+    @Binds
+    abstract fun bindJunctionStationSource(repo: TramRepository): JunctionStationSource
 
     @Binds
     abstract fun bindNextStopLookup(resolver: NextStopResolver): NextStopLookup

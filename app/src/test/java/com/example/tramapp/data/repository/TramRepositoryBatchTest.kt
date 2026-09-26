@@ -1,8 +1,6 @@
 package com.example.tramapp.data.repository
 
-import com.example.tramapp.data.local.dao.LineDirectionDao
 import com.example.tramapp.data.local.dao.StationDao
-import com.example.tramapp.data.local.dao.TripRouteDao
 import com.example.tramapp.data.remote.GolemioService
 import com.example.tramapp.utils.ThrottleUtil
 import kotlinx.coroutines.test.runTest
@@ -35,15 +33,6 @@ class TramRepositoryBatchTest {
     @Mock
     lateinit var stationDao: StationDao
 
-    @Mock
-    lateinit var departureDao: com.example.tramapp.data.local.dao.DepartureDao
-
-    @Mock
-    lateinit var tripRouteDao: TripRouteDao
-
-    @Mock
-    lateinit var lineDirectionDao: LineDirectionDao
-
     private lateinit var throttleUtil: ThrottleUtil
 
     lateinit var repository: TramRepository
@@ -61,7 +50,7 @@ class TramRepositoryBatchTest {
         apiService = retrofit.create(GolemioService::class.java)
 
         throttleUtil = ThrottleUtil()
-        repository = TramRepository(apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao, throttleUtil)
+        repository = TramRepository(apiService, stationDao, throttleUtil)
     }
 
     @After

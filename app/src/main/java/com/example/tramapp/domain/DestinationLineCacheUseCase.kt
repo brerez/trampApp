@@ -20,7 +20,6 @@ class DestinationLineCacheUseCase @Inject constructor(
                 val info = repository.getNearbyInfo(preferences.homeLat, preferences.homeLng)
                 if (info.stopNames.isNotEmpty()) {
                     preferencesManager.updateDestinationData("home", emptySet(), info.stopNames, info.stopIds)
-                    kotlinx.coroutines.delay(1000)
                 }
             }
         }
@@ -31,7 +30,6 @@ class DestinationLineCacheUseCase @Inject constructor(
                 val info = repository.getNearbyInfo(preferences.workLat, preferences.workLng)
                 if (info.stopNames.isNotEmpty()) {
                     preferencesManager.updateDestinationData("work", emptySet(), info.stopNames, info.stopIds)
-                    kotlinx.coroutines.delay(1000)
                 }
             }
         }

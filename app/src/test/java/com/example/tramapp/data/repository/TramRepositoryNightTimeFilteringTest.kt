@@ -25,15 +25,6 @@ class TramRepositoryNightTimeFilteringTest {
     lateinit var stationDao: StationDao
 
     @Mock
-    lateinit var departureDao: com.example.tramapp.data.local.dao.DepartureDao
-
-    @Mock
-    lateinit var tripRouteDao: com.example.tramapp.data.local.dao.TripRouteDao
-
-    @Mock
-    lateinit var lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
-
-    @Mock
     lateinit var throttleUtil: com.example.tramapp.utils.ThrottleUtil
 
     private lateinit var repository: TramRepository
@@ -41,9 +32,7 @@ class TramRepositoryNightTimeFilteringTest {
     @Before
     fun setUp() {
         MockitoAnnotations.openMocks(this)
-        repository = TramRepository(
-            apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao, throttleUtil
-        )
+        repository = TramRepository(apiService, stationDao, throttleUtil)
     }
 
     @Test

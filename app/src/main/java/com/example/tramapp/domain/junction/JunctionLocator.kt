@@ -1,6 +1,5 @@
 package com.example.tramapp.domain.junction
 
-import com.example.tramapp.data.repository.TramRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -8,16 +7,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Shared junction discovery glue (U78 part 1). Wraps TramRepository + JunctionDirectory so both
- * the session service and the dashboard can ask "what junctions are near this point" without
- * duplicating the rediscovery/mapping logic.
+ * Shared junction discovery glue (U78 part 1). Wraps a [JunctionStationSource] + JunctionDirectory
+ * so both the session service and the dashboard can ask "what junctions are near this point"
+ * without duplicating the rediscovery/mapping logic.
  *
  * Rediscovery state (lastPoint/lastTime) is per-process, guarded by a mutex since the service
  * and the dashboard may call this concurrently.
  */
 @Singleton
 class JunctionLocator @Inject constructor(
-    private val repository: TramRepository,
+    private val repository: JunctionStationSource,
 ) {
     /** Test seam: override to control time. */
     var clock: () -> Long = System::currentTimeMillis

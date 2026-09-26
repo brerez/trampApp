@@ -24,21 +24,25 @@ class DashboardTrustFlowTest {
 
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
-    // Pre-grants location permissions so MainActivity's runtime permission dialog never
-    // steals window focus from the Activity — otherwise ComposeTestRule can't find any
-    // compose hierarchy while the system GrantPermissionsActivity is on top.
+    // Pre-grants location AND notification permissions so MainActivity's runtime permission
+    // dialog never steals window focus from the Activity — otherwise ComposeTestRule can't find
+    // any compose hierarchy while the system GrantPermissionsActivity is on top. U10: MainActivity
+    // now also requests POST_NOTIFICATIONS on every normal launch (API 33+), so it must be
+    // pre-granted too, not just location — otherwise the dialog reappears whenever the grant
+    // isn't already sticky from a prior run.
     @get:Rule
     val ruleChain: RuleChain = RuleChain
         .outerRule(GrantPermissionRule.grant(
             Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.POST_NOTIFICATIONS
         ))
         .around(composeRule)
 
     @Test
-    fun dashboardLaunchesAndShowsNearbyStationsTitle() {
+    fun dashboardLaunchesAndShowsNearbyJunctionsTitle() {
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("Nearby Stations").assertExists()
+        composeRule.onNodeWithText("Nearby Junctions").assertExists()
         ScreenshotUtil.capture(composeRule, "dashboard-launch")
     }
 
@@ -79,21 +83,21 @@ class DashboardTrustFlowTest {
     }
 
     /**
-     * U5, R1/R4/AE1: a station renders its `Loading` skeleton first, never an empty-looking
-     * populated card, and is later replaced in the same slot by a `Ready` [station-card] once
-     * departures resolve. Requires a real network round-trip against Golemio, so this
-     * intentionally polls with a generous timeout rather than asserting on a fixed frame.
+     * U10, R4/R22/R23: a junction card's structure renders immediately (never an empty-looking
+     * populated card first), and departure rows fill in once the batched fetch resolves.
+     * Requires a real network round-trip against Golemio, so this intentionally polls with a
+     * generous timeout rather than asserting on a fixed frame.
      */
     @Test
-    fun stationsProgressFromSkeletonToReadyCards() {
+    fun junctionsProgressFromStructureToLiveCards() {
         composeRule.waitForIdle()
         ScreenshotUtil.capture(composeRule, "dashboard-loading")
 
         composeRule.waitUntil(timeoutMillis = 25000) {
-            composeRule.onAllNodesWithTag("station-card").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("junction-card").fetchSemanticsNodes().isNotEmpty()
         }
 
-        composeRule.onAllNodesWithTag("station-card").onFirst().assertExists()
+        composeRule.onAllNodesWithTag("junction-card").onFirst().assertExists()
         ScreenshotUtil.capture(composeRule, "dashboard-ready")
     }
 
@@ -113,20 +117,20 @@ class DashboardTrustFlowTest {
         composeRule.waitForIdle()
         val becameReady = try {
             composeRule.waitUntil(timeoutMillis = 45000) {
-                composeRule.onAllNodesWithTag("station-card").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithTag("junction-card").fetchSemanticsNodes().isNotEmpty()
             }
             true
         } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
             false
         }
         if (!becameReady) {
-            println("No station reached Ready within 45s (likely no live departures near " +
+            println("No junction reached Ready within 45s (likely no live departures near " +
                 "the test location right now) — skipping glyph assertion.")
             return
         }
 
         // Not asserting a specific count — live data may or may not include an
-        // amenity-flagged departure this run. The station-card existing at all (R1/R4)
+        // amenity-flagged departure this run. The junction-card existing at all (R22/R23)
         // combined with a clean screenshot is the manual R21 legibility check.
         composeRule.onAllNodesWithTag("amenity-glyph").fetchSemanticsNodes()
         ScreenshotUtil.capture(composeRule, "dashboard-amenity-glyphs")
