@@ -30,7 +30,10 @@ data class DepartureItem(
     @SerializedName("route") val route: RouteInfo,
     @SerializedName("trip") val trip: TripInfo,
     @SerializedName("arrival_timestamp") val arrival: TimestampInfo,
-    @SerializedName("stop") val stop: StopInfo
+    @SerializedName("stop") val stop: StopInfo,
+    // U3: per-departure delay and last-stop info for junction batch fetches.
+    @SerializedName("delay") val delay: DelayInfo? = null,
+    @SerializedName("last_stop") val lastStop: LastStopInfo? = null
 )
 
 data class RouteInfo(
@@ -42,10 +45,27 @@ data class TripInfo(
     @SerializedName("id") val tripId: String? = null,
     // U8/KTD4 (R7-R9): nullable — null means "unknown" (omit the indicator), not "false".
     @SerializedName("is_wheelchair_accessible") val isWheelchairAccessible: Boolean? = null,
-    @SerializedName("is_air_conditioned") val isAirConditioned: Boolean? = null
+    @SerializedName("is_air_conditioned") val isAirConditioned: Boolean? = null,
+    // U3: canceled / at-stop indicators (nullable — null means "unknown").
+    @SerializedName("is_canceled") val isCanceled: Boolean? = null,
+    @SerializedName("is_at_stop") val isAtStop: Boolean? = null
 )
 data class TimestampInfo(val scheduled: String, val predicted: String?)
-data class StopInfo(val id: String)
+data class StopInfo(
+    val id: String,
+    @SerializedName("platform_code") val platformCode: String? = null
+)
+
+data class DelayInfo(
+    @SerializedName("is_available") val isAvailable: Boolean? = null,
+    @SerializedName("minutes") val minutes: Int? = null,
+    @SerializedName("seconds") val seconds: Int? = null
+)
+
+data class LastStopInfo(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("name") val name: String? = null
+)
 
 data class TripDetailsResponse(
     @SerializedName("trip_id") val tripId: String,

@@ -33,6 +33,9 @@ class TramRepository @Inject constructor(
     private val _apiQueryCount = MutableStateFlow(0)
     val apiQueryCount: StateFlow<Int> = _apiQueryCount.asStateFlow()
 
+    /** PID stop node id = stop id prefix before the first 'Z' (e.g. "U324Z1P" -> "U324"). */
+    private fun nodeIdOf(stopId: String): String = stopId.substringBefore('Z')
+
     private suspend fun checkThrottle() {
         throttleUtil.checkThrottle()
     }
@@ -95,7 +98,9 @@ class TramRepository @Inject constructor(
                         name = feature.properties.stopName + platformLabel,
                         latitude = feature.geometry.coordinates[1],
                         longitude = feature.geometry.coordinates[0],
-                        lastUpdate = System.currentTimeMillis()
+                        lastUpdate = System.currentTimeMillis(),
+                        nodeId = nodeIdOf(feature.properties.stopId),
+                        platformCode = feature.properties.platformCode
                     )
                 }
 
@@ -118,6 +123,35 @@ class TramRepository @Inject constructor(
             stationDao.updateIsTramStatus(stopId, false)
         }
         return tramOnly
+    }
+
+    /** One batched call for all platforms of a junction. Returns tram-only departures keyed by platform stop id
+     *  (every requested id present as a key, possibly empty list). Updates isTram per platform: true if the
+     *  platform has any tram departure, false if it has departures but none are trams, unchanged if none at all.
+     *  Uses the existing withRetry (throttle back-off + one retry on 429). Does NOT write the departure cache. */
+    suspend fun getJunctionDepartures(platformIds: List<String>): Map<String, List<DepartureItem>> {
+        val response = withRetry { apiService.getDepartureBoards(platformIds) }
+        val idSet = platformIds.toSet()
+        val byPlatform: Map<String, List<DepartureItem>> = platformIds.associateWith { mutableListOf<DepartureItem>() }
+        val grouped = byPlatform.mapValues { it.value as MutableList<DepartureItem> }
+        for (item in response.departures) {
+            val platformId = item.stop.id
+            if (platformId !in idSet) continue
+            grouped[platformId]?.add(item)
+        }
+
+        val result = mutableMapOf<String, List<DepartureItem>>()
+        for (platformId in platformIds) {
+            val all = grouped[platformId].orEmpty()
+            val trams = all.filter { it.route.type == 0 }
+            if (trams.isNotEmpty()) {
+                stationDao.updateIsTramStatus(platformId, true)
+            } else if (all.isNotEmpty()) {
+                stationDao.updateIsTramStatus(platformId, false)
+            }
+            result[platformId] = trams
+        }
+        return result
     }
 
     private suspend fun saveDeparturesToCache(stopId: String, departures: List<DepartureItem>) {
@@ -340,7 +374,9 @@ class TramRepository @Inject constructor(
                                     latitude = feature.geometry.coordinates[1],
                                     longitude = feature.geometry.coordinates[0],
                                     lastUpdate = System.currentTimeMillis(),
-                                    isTram = true
+                                    isTram = true,
+                                    nodeId = nodeIdOf(feature.properties.stopId),
+                                    platformCode = feature.properties.platformCode
                                 )
                             )
                         )

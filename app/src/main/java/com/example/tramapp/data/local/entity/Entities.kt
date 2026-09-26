@@ -12,7 +12,10 @@ data class StationEntity(
     val direction: String? = null,
     val isFavorite: Boolean = false,
     val lastUpdate: Long = 0,
-    val isTram: Boolean? = null
+    val isTram: Boolean? = null,
+    // U3: junction (PID stop node) id — the stop id prefix before the first 'Z' — and platform code.
+    val nodeId: String? = null,
+    val platformCode: String? = null
 )
 
 @Entity(tableName = "schedules")

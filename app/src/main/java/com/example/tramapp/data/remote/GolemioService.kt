@@ -32,6 +32,16 @@ interface GolemioService {
         @Query("airCondition") airCondition: Boolean = true
     ): DepartureResponse
 
+    // U3: one batched call for all platforms of a junction (node).
+    @GET("pid/departureboards")
+    suspend fun getDepartureBoards(
+        @Query("ids[]") ids: List<String>,
+        @Query("limit") limit: Int = 200,
+        @Query("minutesBefore") minutesBefore: Int = 0,
+        @Query("minutesAfter") minutesAfter: Int = 60,
+        @Query("airCondition") airCondition: Boolean = true
+    ): DepartureResponse
+
     @GET("gtfs/trips/{id}")
     suspend fun getTripDetails(
         @Path("id") tripId: String,
