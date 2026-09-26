@@ -38,7 +38,7 @@ object JunctionNotificationFormatter {
             junctionNodeId = junction.nodeId
 
             if (snapshot == null || snapshot.rows == null) {
-                statusLineBase = "Loading times\u2026"
+                statusLineBase = if (snapshot?.state == SnapshotState.ERROR) "Offline \u00b7 retrying" else "Loading times\u2026"
             } else {
                 val rows = snapshot.rows
                 
