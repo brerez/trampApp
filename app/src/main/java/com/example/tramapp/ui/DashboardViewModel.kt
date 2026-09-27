@@ -29,6 +29,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -171,6 +172,12 @@ class DashboardViewModel @Inject constructor(
     private var tripFetchJob: Job? = null
     private var locationCallback: LocationCallback? = null
 
+    // Declared before init: init's coroutines run eagerly on Main.immediate and read these.
+    private val startTimeMs = System.currentTimeMillis()
+    private var firstRowsLogged = false
+
+    private var lastSelection: JunctionSelection = JunctionSelection.NoFix
+
     init {
         viewModelScope.launch {
             // Step 1: an immediate fix from cached prefs so junction structure can render before
@@ -234,10 +241,6 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private val startTimeMs = System.currentTimeMillis()
-    private var firstRowsLogged = false
-
-    private var lastSelection: JunctionSelection = JunctionSelection.NoFix
 
     /** Public seam: production wires this from fused-location callbacks; tests call it directly
      *  to simulate "the first location fix" without mocking the Play Services Task API (R22/R23). */
@@ -249,7 +252,15 @@ class DashboardViewModel @Inject constructor(
             selector.onFix(fix)
             val selection = selector.setJunctions(junctions)
             lastSelection = selection
-            applySelection(selection, prefs.maxStations)
+            val refreshes = applySelection(selection, prefs.maxStations)
+            // Refreshes learn which nodes are bus-only (isTram=false); drop them from the list
+            // now rather than on the next GPS fix.
+            refreshes.joinAll()
+            val relearned = selector.setJunctions(junctionLocator.junctionsNear(fix.point, prefs.displayRadius))
+            if (relearned is JunctionSelection.Selected && lastSelection === selection) {
+                lastSelection = relearned
+                applySelection(relearned, prefs.maxStations)
+            }
         }
     }
 
@@ -264,23 +275,27 @@ class DashboardViewModel @Inject constructor(
      *  every one of them synchronously (before any network call), then refreshes each
      *  concurrently through the shared engine — one batched call per junction, no delays
      *  between them (R19, R22, R23). */
-    private fun applySelection(selection: JunctionSelection, maxStations: Int) {
-        when (selection) {
+    private fun applySelection(selection: JunctionSelection, maxStations: Int): List<Job> {
+        return when (selection) {
             is JunctionSelection.Selected -> {
                 _noStopInRange.value = false
                 val order = buildDisplayOrder(selection.ranked, maxStations, _pinnedNodeId.value)
                 _junctionOrder.value = order
                 order.forEach { junctionEngine.show(it) }
-                order.forEach { junction ->
+                // The engine coalesces, so junctions refreshed within the last few seconds
+                // cost nothing here.
+                order.map { junction ->
                     viewModelScope.launch { junctionEngine.refresh(junction) }
                 }
             }
             is JunctionSelection.NoneInRange -> {
                 _noStopInRange.value = true
                 _junctionOrder.value = emptyList()
+                emptyList()
             }
             is JunctionSelection.NoFix -> {
                 // keep whatever was last shown
+                emptyList()
             }
         }
     }

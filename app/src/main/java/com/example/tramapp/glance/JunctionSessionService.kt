@@ -29,6 +29,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.Priority
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -61,7 +62,11 @@ class JunctionSessionService : Service() {
     private val serviceJob = SupervisorJob()
     // Main thread: selector, scheduler and render state are not thread-safe. Network and Room
     // calls suspend off the main thread on their own.
-    private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + serviceJob)
+    // A failed refresh/render must not take the whole app (and the dashboard) down with it.
+    private val serviceScope = CoroutineScope(
+        Dispatchers.Main.immediate + serviceJob +
+            CoroutineExceptionHandler { _, e -> Log.e(TAG, "Session coroutine failed", e) },
+    )
 
     private val selector = JunctionSelector()
     private val headingGate = HeadingGate()
@@ -138,7 +143,16 @@ class JunctionSessionService : Service() {
 
         if (!started) {
             started = true
-            startForegroundWithLocating()
+            try {
+                startForegroundWithLocating()
+            } catch (e: SecurityException) {
+                // Not eligible for a location FGS right now (e.g. started from the background).
+                // Bail out instead of crashing the whole app.
+                Log.e(TAG, "Cannot start location foreground service", e)
+                started = false
+                stopSelf()
+                return START_NOT_STICKY
+            }
             SessionState.setActive(true)
             beginLocationUpdates()
             serviceScope.launch {
@@ -248,6 +262,10 @@ class JunctionSessionService : Service() {
                         scheduleRender()
                     }
                 }
+                // A switch (e.g. the first pick turned out bus-only) must fetch the new junction
+                // now, not on the next cadence tick 20+ s later. The engine coalesces repeats.
+                val junction = (selection as JunctionSelection.Selected).junction
+                serviceScope.launch { engine.refresh(junction) }
             }
         }
         scheduleRender()
@@ -278,8 +296,13 @@ class JunctionSessionService : Service() {
         val content = JunctionNotificationFormatter.format(
             FormatterInput(currentSelection, currentSnapshot, currentHeadingDeg, screenOn, now, healthWarning),
         )
-        val notification = renderer.render(content)
-        NotificationManagerCompat.from(this).notify(JunctionNotificationRenderer.NOTIFICATION_ID, notification)
+        try {
+            val notification = renderer.render(content)
+            NotificationManagerCompat.from(this).notify(JunctionNotificationRenderer.NOTIFICATION_ID, notification)
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "Notification render failed", e)
+            return
+        }
 
         if (!firstRenderLogged && content.lines.isNotEmpty()) {
             firstRenderLogged = true

@@ -200,10 +200,10 @@ class DashboardViewModelJunctionTest {
     @Test
     fun `R4 deep-linked junction id places it first and marks it pinned`() = runTest(testDispatcher) {
         val stations = listOf(
-            station("NEARZ1P", "NEAR", "Nearest", "A", 50.10, 14.40),
-            station("KAMZ1P", "KAM", "Kamenicka", "A", 50.11, 14.41)
+            station("U10Z1P", "U10", "Nearest", "A", 50.10, 14.40),
+            station("U20Z1P", "U20", "Kamenicka", "A", 50.11, 14.41)
         )
-        deepLinkState.setJunctionId("KAM")
+        deepLinkState.setJunctionId("U20")
         val vm = buildViewModel(stations)
         testDispatcher.scheduler.runCurrent()
 
@@ -214,7 +214,7 @@ class DashboardViewModelJunctionTest {
         val cards = vm.junctionCards.value
         job.cancel()
 
-        assertEquals("KAM", cards.first().junction.nodeId)
+        assertEquals("U20", cards.first().junction.nodeId)
         assertTrue(cards.first().isPinned)
     }
 

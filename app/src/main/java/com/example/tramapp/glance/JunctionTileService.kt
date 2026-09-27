@@ -52,9 +52,15 @@ class JunctionTileService : TileService() {
                 action = JunctionNotificationRenderer.ACTION_STOP
             })
         } else {
-            val intent = Intent(this, JunctionSessionService::class.java)
-            ContextCompat.startForegroundService(this, intent)
+            launchCollapsed(Intent(this, SessionStartActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }, REQUEST_START_SESSION)
         }
+    }
+
+    private companion object {
+        const val REQUEST_OPEN_APP = 0
+        const val REQUEST_START_SESSION = 1
     }
 
     private fun hasRequiredPermissions(): Boolean {
@@ -74,13 +80,16 @@ class JunctionTileService : TileService() {
     }
 
     private fun openAppForPermissions() {
-        val intent = Intent(this, MainActivity::class.java).apply {
+        launchCollapsed(Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             putExtra("request_permissions", true)
-        }
+        }, REQUEST_OPEN_APP)
+    }
+
+    private fun launchCollapsed(intent: Intent, requestCode: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val pendingIntent = PendingIntent.getActivity(
-                this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             startActivityAndCollapse(pendingIntent)
         } else {

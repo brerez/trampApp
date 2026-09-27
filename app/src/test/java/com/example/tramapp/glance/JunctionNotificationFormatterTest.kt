@@ -84,15 +84,14 @@ class JunctionNotificationFormatterTest {
         assertTrue("Distance present", firstLineText.contains("m "))
         val arrowStrings = listOf("\u2191", "\u2197", "\u2192", "\u2198", "\u2193", "\u2199", "\u2190", "\u2196")
         
-        val hasArrowBeforePlatform = content.lines[0].segments.indexOfFirst { it.text.trim() in arrowStrings } < content.lines[0].segments.indexOfFirst { it.style == SegmentStyle.MUTED }
-        assertFalse("Arrow absent", hasArrowBeforePlatform)
+        // The only arrow on the line is the compass arrow; the travel direction is words.
+        assertFalse("Arrow absent", content.lines[0].segments.any { it.text.trim() in arrowStrings })
 
         // headingDeg = null
         content = JunctionNotificationFormatter.format(
             FormatterInput(createSelection(), snapshot, headingDeg = null, screenOn = true, nowMs = nowMs)
         )
-        val hasArrowBeforePlatform2 = content.lines[0].segments.indexOfFirst { it.text.trim() in arrowStrings } < content.lines[0].segments.indexOfFirst { it.style == SegmentStyle.MUTED }
-        assertFalse("Arrow absent", hasArrowBeforePlatform2)
+        assertFalse("Arrow absent", content.lines[0].segments.any { it.text.trim() in arrowStrings })
 
         // screenOn = true + heading
         content = JunctionNotificationFormatter.format(
@@ -183,9 +182,9 @@ class JunctionNotificationFormatterTest {
         )
         
         val row2Segments = content.lines[1].segments
-        assertTrue(row2Segments.any { it.text == "\u25CF " && it.style == SegmentStyle.PLAIN })
+        assertTrue(row2Segments.any { it.text == " \uD83C\uDFE0" &&it.style == SegmentStyle.HIGHLIGHT_LABEL })
         assertTrue(row2Segments.any { it.style == SegmentStyle.HIGHLIGHT_LABEL })
-        assertFalse(row2Segments.any { it.text.contains("m ") && it.style == SegmentStyle.MUTED })
+        assertFalse(row2Segments.any { it.text.endsWith(" m") && it.style == SegmentStyle.MUTED })
     }
 
     @Test

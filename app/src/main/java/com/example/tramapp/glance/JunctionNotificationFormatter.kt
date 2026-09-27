@@ -1,5 +1,6 @@
 package com.example.tramapp.glance
 
+import com.example.tramapp.domain.junction.Destination
 import com.example.tramapp.domain.junction.Geo
 import com.example.tramapp.domain.junction.JunctionRow
 import com.example.tramapp.domain.junction.JunctionSelection
@@ -13,6 +14,12 @@ object JunctionNotificationFormatter {
     const val TRAMS_PER_ROW = 3
     const val CHIP_MAX_CHARS = 7
     const val STALE_AFTER_MS = 5 * 60_000L
+
+    fun destinationIcon(destination: Destination): String = when (destination) {
+        Destination.HOME -> "🏠"   // house
+        Destination.WORK -> "💼"   // briefcase
+        Destination.SCHOOL -> "🎓" // graduation cap
+    }
 
     fun format(input: FormatterInput): NotificationContent {
         val selection = input.selection
@@ -51,14 +58,22 @@ object JunctionNotificationFormatter {
                     lines = linesToProcess.map { row ->
                         val segments = mutableListOf<Segment>()
                         
-                        if (row.highlights.isNotEmpty()) {
-                            segments.add(Segment("\u25CF ", SegmentStyle.PLAIN))
-                        }
-                        
+                        // Header line, in words: Samsung strips the bold/colour spans, so the
+                        // text alone has to say which platform, where it is and where it goes.
+                        // The only arrow is the compass one; the travel direction is "next stop".
+                        segments.add(Segment("Platform ", SegmentStyle.PLAIN))
                         segments.add(Segment(row.platformLetter, SegmentStyle.PLATFORM))
-                        segments.add(Segment(" ", SegmentStyle.PLAIN))
-                        
+
+                        // Near the front so it survives ellipsizing; emoji because the styling
+                        // that would otherwise mark a destination-bound row is stripped.
+                        if (row.highlights.isNotEmpty()) {
+                            val icons = Destination.entries.filter { it in row.highlights }
+                                .joinToString("") { destinationIcon(it) }
+                            segments.add(Segment(" $icons", SegmentStyle.HIGHLIGHT_LABEL))
+                        }
+
                         if (row.isPlatformFirstRow) {
+                            segments.add(Segment(" \u00B7 ", SegmentStyle.PLAIN))
                             if (headingDeg != null && screenOn) {
                                 val arrowStr = Geo.arrow(Geo.bearingDeg(selection.fix.point, row.platformPosition), headingDeg)
                                 if (arrowStr != null) {
@@ -66,12 +81,12 @@ object JunctionNotificationFormatter {
                                 }
                             }
                             val d = Geo.distanceM(selection.fix.point, row.platformPosition)
-                            segments.add(Segment("${Geo.formatDistance(d)} ", SegmentStyle.MUTED))
+                            segments.add(Segment(Geo.formatDistance(d), SegmentStyle.MUTED))
                         }
-                        
-                        segments.add(Segment("\u2192 ", SegmentStyle.PLAIN))
+
+                        segments.add(Segment(" \u00B7 next stop ", SegmentStyle.PLAIN))
                         segments.add(Segment(row.label, if (row.highlights.isNotEmpty()) SegmentStyle.HIGHLIGHT_LABEL else SegmentStyle.PLAIN))
-                        
+
                         segments.add(Segment("  ", SegmentStyle.PLAIN))
                         
                         val tramsToProcess = row.trams.take(TRAMS_PER_ROW)

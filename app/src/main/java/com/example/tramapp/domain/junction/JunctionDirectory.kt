@@ -9,12 +9,17 @@ object JunctionDirectory {
         return if (idx == -1) stopId else stopId.substring(0, idx)
     }
 
-    /** Groups by nodeId. Excludes platforms with isTram == false. Excludes a junction with no remaining
+    /** PID city platforms (the only ones trams use) look like "U324Z1P"; rail nodes ("T57073")
+     *  and other feeds never carry trams, and their isTram stays unknown when they have no
+     *  departures in the window, so they'd otherwise show up as junctions forever. */
+    private val PID_PLATFORM = Regex("^U[0-9]+Z")
+
+    /** Groups by nodeId. Excludes non-PID-city stops and platforms with isTram == false. Excludes a junction with no remaining
      *  platforms. Letter = platformCode ?: text between 'Z' and trailing 'P' of stopId ?: "?".
      *  Junction name = most common `name` among its platforms (strip any trailing " [X]" suffix).
      *  Platforms sorted by letter; junctions sorted by nodeId. */
     fun build(stops: List<PlatformStop>): List<Junction> {
-        return stops.filter { it.isTram != false }
+        return stops.filter { it.isTram != false && PID_PLATFORM.containsMatchIn(it.stopId) }
             .groupBy { it.nodeId }
             .mapNotNull { (nodeId, platformStops) ->
                 if (platformStops.isEmpty()) return@mapNotNull null

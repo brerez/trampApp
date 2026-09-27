@@ -213,34 +213,54 @@ class NextStopResolverTest {
      * the new stop, while older cached trips keep theirs.
      */
     @Test
-    fun `AE2 new trip ids resolve to new stop while cached trips keep old result`() = runTest {
+    fun `AE2 new trip on a resolved route reuses it without a fetch, new headsign fetches`() = runTest {
         val oldStops = makeStops(
             "U163Z2P" to "Platform",
             "OLD_NEXT_Z1P" to "Old Next",
             "U004Z1P" to "Downstream"
         )
-        val newStops = makeStops(
+        val otherStops = makeStops(
             "U163Z2P" to "Platform",
             "NEW_NEXT_Z1P" to "New Next",
             "U005Z1P" to "Downstream2"
         )
         val source = FakeTripSequenceSource(
-            mapOf("trip-old" to oldStops, "trip-new" to newStops)
+            mapOf("trip-old" to oldStops, "trip-other" to otherStops)
         )
         val resolver = makeResolver(source)
 
-        // Resolve old trip first
         resolver.resolve("U163Z2P", listOf(makeDeparture("trip-old", "12", "Terminus")))
-
-        // Now resolve new trip (different id, different sequence)
+        // Trip ids roll over every few minutes; the same line+headsign must not refetch.
         resolver.resolve("U163Z2P", listOf(makeDeparture("trip-new", "12", "Terminus")))
+        assertEquals(1, source.tripStopsCallCount.get())
+
+        resolver.resolve("U163Z2P", listOf(makeDeparture("trip-other", "12", "Elsewhere")))
+        assertEquals(2, source.tripStopsCallCount.get())
 
         val cachedAll = resolver.cached("U163Z2P", listOf(
-            makeDeparture("trip-old", "12", "Terminus"),
-            makeDeparture("trip-new", "12", "Terminus")
+            makeDeparture("trip-new", "12", "Terminus"),
+            makeDeparture("trip-other", "12", "Elsewhere")
         ))
-        assertEquals("Old Next", cachedAll["trip-old"]?.nextStopName)
-        assertEquals("New Next", cachedAll["trip-new"]?.nextStopName)
+        assertEquals("Old Next", cachedAll["trip-new"]?.nextStopName)
+        assertEquals("New Next", cachedAll["trip-other"]?.nextStopName)
+    }
+
+    @Test
+    fun `one route fetch serves every platform it passes`() = runTest {
+        val stops = makeStops(
+            "U163Z1P" to "A",
+            "U163Z2P" to "B",
+            "U200Z1P" to "C",
+            "U201Z1P" to "D"
+        )
+        val source = FakeTripSequenceSource(mapOf("t1" to stops))
+        val resolver = makeResolver(source)
+
+        resolver.resolve("U163Z1P", listOf(makeDeparture("t1", "5", "D", "U163Z1P")))
+        resolver.resolve("U200Z1P", listOf(makeDeparture("t9", "5", "D", "U200Z1P")))
+
+        assertEquals(1, source.tripStopsCallCount.get())
+        assertEquals("D", resolver.cached("U200Z1P", listOf(makeDeparture("t9", "5", "D", "U200Z1P")))["t9"]?.nextStopName)
     }
 
     /**

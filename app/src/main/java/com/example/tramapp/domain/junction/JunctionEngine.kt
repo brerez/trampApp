@@ -129,7 +129,9 @@ class JunctionEngine @Inject constructor(
 
             // Step 4: emit with cachedAll results
             val fetchedAt = clock()
-            val destNodes = safely(DestinationNodes.NONE) { destinations.current() }
+            val here = junction.platforms.firstOrNull()?.position
+            fun DestinationNodes.forHere() = if (here == null) this else awayFrom(here)
+            val destNodes = safely(DestinationNodes.NONE) { destinations.current() }.forHere()
             val cached = safely(emptyMap()) { nextStops.cachedAll(departuresByPlatform) }
             val cachedRows = JunctionRowBuilder.build(junction, departuresByPlatform, cached, destNodes)
 
@@ -160,7 +162,7 @@ class JunctionEngine @Inject constructor(
             }
 
             if (anyNew) {
-                val resolvedDestNodes = safely(destNodes) { destinations.current() }
+                val resolvedDestNodes = safely(destNodes) { destinations.current().forHere() }
                 val resolvedRows = JunctionRowBuilder.build(junction, departuresByPlatform, resolved, resolvedDestNodes)
                 flow.value = JunctionSnapshot(
                     junction = junction,

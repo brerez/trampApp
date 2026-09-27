@@ -88,6 +88,9 @@ class TramRepository @Inject constructor(
 
         try {
             val response = withRetry { apiService.getStops("$lat,$lng", limit = 1000) }
+            // Keep what refreshes already learned: a REPLACE with isTram = null would make every
+            // known bus stop look like a candidate junction again and re-probe it.
+            val knownIsTram = existing.associate { it.id to it.isTram }
             val stationEntities = response.features
                 .filter { it.properties.locationType == 0 }
                 .map { feature ->
@@ -98,6 +101,7 @@ class TramRepository @Inject constructor(
                         latitude = feature.geometry.coordinates[1],
                         longitude = feature.geometry.coordinates[0],
                         lastUpdate = System.currentTimeMillis(),
+                        isTram = knownIsTram[feature.properties.stopId],
                         nodeId = nodeIdOf(feature.properties.stopId),
                         platformCode = feature.properties.platformCode
                     )
@@ -127,6 +131,8 @@ class TramRepository @Inject constructor(
             grouped[platformId]?.add(item)
         }
 
+        classifyQuietPlatforms(platformIds.filter { grouped[it].isNullOrEmpty() })
+
         val result = mutableMapOf<String, List<DepartureItem>>()
         for (platformId in platformIds) {
             val all = grouped[platformId].orEmpty()
@@ -141,6 +147,31 @@ class TramRepository @Inject constructor(
         return result
     }
 
+
+    /** A platform with nothing in the next hour (a quiet bus stop on a Sunday) never learns
+     *  whether it's a tram stop, so it lingers as an empty "junction" and can even win as the
+     *  nearest one. Look three days ahead (weekday-only stops are silent all weekend), once, for
+     *  the ones still unclassified. A stop with no service at all in that window has nothing to
+     *  show, so it's classified non-tram; rediscovery resets it to unknown within a day. */
+    private suspend fun classifyQuietPlatforms(emptyIds: List<String>) {
+        if (emptyIds.isEmpty()) return
+        // Best-effort: must never fail the departures that already arrived.
+        try {
+            val unknown = stationDao.getAllStations().first()
+                .filter { it.id in emptyIds && it.isTram == null }
+                .map { it.id }
+            if (unknown.isEmpty()) return
+            val probe = withRetry { apiService.getDepartureBoards(unknown, limit = 100, minutesAfter = 3 * 24 * 60) }
+            val byPlatform = probe.departures.groupBy { it.stop.id }
+            for (id in unknown) {
+                stationDao.updateIsTramStatus(id, byPlatform[id].orEmpty().any { it.route.type == 0 })
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Stays unknown; the next refresh tries again.
+        }
+    }
 
     suspend fun toggleFavorite(stationId: String, isFavorite: Boolean) {
         stationDao.updateFavoriteStatus(stationId, isFavorite)

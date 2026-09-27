@@ -67,8 +67,10 @@ class JunctionNotificationRenderer @Inject constructor(
     fun render(content: NotificationContent): Notification {
         ensureChannel()
 
-        val collapsed = buildRemoteViews(R.layout.notification_junction_collapsed, content, maxRows = 2, showOverflow = false)
-        val expanded = buildRemoteViews(R.layout.notification_junction_expanded, content, maxRows = JunctionNotificationFormatter.MAX_ROWS, showOverflow = true)
+        // Collapsed height is tight: one row, header on one line. Expanded lets the header wrap
+        // so large font scales still show platform, distance and next stop in full.
+        val collapsed = buildRemoteViews(R.layout.notification_junction_collapsed, content, maxRows = 1, showOverflow = false, headerMaxLines = 1)
+        val expanded = buildRemoteViews(R.layout.notification_junction_expanded, content, maxRows = JunctionNotificationFormatter.MAX_ROWS, showOverflow = true, headerMaxLines = 2)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_tile_tram)
@@ -138,13 +140,14 @@ class JunctionNotificationRenderer @Inject constructor(
         content: NotificationContent,
         maxRows: Int,
         showOverflow: Boolean,
+        headerMaxLines: Int,
     ): RemoteViews {
         val rv = RemoteViews(context.packageName, layoutRes)
         rv.setTextViewText(R.id.tv_title, content.title)
 
         val rowsToShow = content.lines.take(maxRows)
         for (line in rowsToShow) {
-            rv.addView(R.id.rows_container, buildRowView(line))
+            rv.addView(R.id.rows_container, buildRowView(line, headerMaxLines))
         }
 
         if (showOverflow) {
@@ -167,8 +170,9 @@ class JunctionNotificationRenderer @Inject constructor(
     }
 
     /** One ContentLine -> a notification_junction_row RemoteViews: prefix spannable + tram chips. */
-    private fun buildRowView(line: ContentLine): RemoteViews {
+    private fun buildRowView(line: ContentLine, headerMaxLines: Int): RemoteViews {
         val row = RemoteViews(context.packageName, R.layout.notification_junction_row)
+        row.setInt(R.id.tv_prefix, "setMaxLines", headerMaxLines)
 
         val prefixSegments = mutableListOf<Segment>()
         var i = 0

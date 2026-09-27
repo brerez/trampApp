@@ -185,4 +185,31 @@ class TramRepositoryBatchTest {
         assertEquals(1, result["U500Z1P"]!!.size)
         assertEquals(2, server.requestCount)
     }
+
+    @Test
+    fun `quiet unclassified platforms are probed three days ahead and classified`() = runTest {
+        fun station(id: String, isTram: Boolean?) = com.example.tramapp.data.local.entity.StationEntity(
+            id = id, name = id, latitude = 50.0, longitude = 14.0, lastUpdate = 0L, isTram = isTram,
+            nodeId = id.substringBefore('Z'), platformCode = null,
+        )
+        org.mockito.kotlin.whenever(stationDao.getAllStations()).thenReturn(
+            kotlinx.coroutines.flow.flowOf(listOf(station("U400Z1P", null), station("U400Z2P", true)))
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"departures": []}"""))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""
+            {"departures": [
+              { "route": {"short_name":"136","type":3}, "trip": {"headsign":"X"}, "arrival_timestamp": {"scheduled":"2026-01-01T05:00:00Z","predicted":null}, "stop": {"id":"U400Z1P"} }
+            ]}
+        """.trimIndent()))
+
+        repository.getJunctionDepartures(listOf("U400Z1P", "U400Z2P"))
+
+        assertEquals(2, server.requestCount)
+        server.takeRequest()
+        val probe = server.takeRequest()
+        // Only the unclassified platform is probed; the known tram platform isn't.
+        assertEquals(listOf("U400Z1P"), requestedIds(probe.path!!))
+        assertEquals("4320", queryParam(probe.path!!, "minutesAfter"))
+        verify(stationDao).updateIsTramStatus("U400Z1P", false)
+    }
 }
