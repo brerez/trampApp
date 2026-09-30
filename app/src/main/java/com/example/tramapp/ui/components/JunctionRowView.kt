@@ -122,7 +122,6 @@ fun JunctionRowView(
                     if (tripId != null) onTramClick(tripId, tram.line, row.label)
                 },
                 isCancelled = tram.isCancelled,
-                delayMinutes = tram.delayMinutes,
                 minutesOverride = tram.minutesUntil(now.toInstant().toEpochMilli())
             )
         }

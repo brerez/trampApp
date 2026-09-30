@@ -32,10 +32,9 @@ fun TramRow(
     now: OffsetDateTime,
     onFavoriteClick: () -> Unit,
     onClick: () -> Unit,
-    // U10 (R11, KTD10): junction rows carry cancellation/delay/minutes directly from the
+    // U10 (R11, KTD10): junction rows carry cancellation/minutes directly from the
     // TramDeparture model instead of re-deriving them from arrival.predicted/scheduled.
     isCancelled: Boolean = false,
-    delayMinutes: Int? = null,
     minutesOverride: Int? = null
 ) {
     val tram = smartDeparture.item
@@ -58,10 +57,8 @@ fun TramRow(
 
     val timeText = when {
         isCancelled -> "Cancelled"
-        minutesOverride != null -> {
-            val base = if (minutesOverride <= 0) "now" else "$minutesOverride min"
-            if (delayMinutes != null && delayMinutes != 0) "$base (+$delayMinutes)" else base
-        }
+        // Minutes already reflect the predicted arrival, so no separate delay suffix.
+        minutesOverride != null -> if (minutesOverride <= 0) "now" else "$minutesOverride min"
         else -> {
             val arrivalTime = try {
                 OffsetDateTime.parse(tram.arrival.predicted ?: tram.arrival.scheduled)

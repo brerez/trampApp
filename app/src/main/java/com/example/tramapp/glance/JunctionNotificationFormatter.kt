@@ -103,12 +103,6 @@ object JunctionNotificationFormatter {
                                 val mins = tram.minutesUntil(nowMs)
                                 val timeText = if (mins == 0) "now" else "${mins}m"
                                 segments.add(Segment(" $timeText", SegmentStyle.PLAIN))
-                                
-                                val delay = tram.delayMinutes
-                                if (delay != null && delay != 0) {
-                                    val sign = if (delay > 0) "+" else ""
-                                    segments.add(Segment(" $sign$delay", SegmentStyle.MUTED))
-                                }
                             }
                         }
                         ContentLine(segments)

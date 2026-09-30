@@ -137,7 +137,8 @@ class JunctionNotificationFormatterTest {
         )
         val segments = content.lines[0].segments
         assertTrue("Contains cancelled segment", segments.any { it.style == SegmentStyle.CANCELLED && it.text == " \u2715" })
-        assertTrue("Contains delay segment", segments.any { it.style == SegmentStyle.MUTED && it.text == " +3" })
+        assertTrue("Shows predicted minutes", segments.any { it.style == SegmentStyle.PLAIN && it.text == " 3m" })
+        assertTrue("No delay suffix", segments.none { it.text.trim().startsWith("+") })
     }
 
     @Test
