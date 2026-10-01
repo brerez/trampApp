@@ -24,6 +24,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tramapp.ui.theme.*
 import androidx.hilt.navigation.compose.hiltViewModel
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.testTag
+import com.example.tramapp.glance.SessionHealth
+import com.example.tramapp.glance.SessionWarning
 
 import kotlinx.coroutines.launch
 
@@ -41,6 +52,22 @@ fun SettingsScreen(
     fun formatCoords(lat: Double?, lng: Double?) =
         if (lat != null && lng != null) "📍 %.4f, %.4f".format(lat, lng) else "Tap to set"
 
+    val context = LocalContext.current
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+    val packageName = context.packageName
+    var isIgnoringBattery by remember { mutableStateOf(powerManager.isIgnoringBatteryOptimizations(packageName)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isIgnoringBattery = powerManager.isIgnoringBatteryOptimizations(packageName)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(DeepBlack)) {
         Box(
             modifier = Modifier
@@ -53,6 +80,7 @@ fun SettingsScreen(
 
         Scaffold(
             containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0),
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { paddingValues ->
             Column(
@@ -155,6 +183,82 @@ fun SettingsScreen(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Tram glance session
+                SettingsGroup(title = "Tram glance session") {
+                    val screenOnValues = listOf(10, 20, 30, 60)
+                    val screenOnLabels = listOf("10 s", "20 s", "30 s", "60 s")
+                    val currentScreenOn = prefs?.sessionScreenOnIntervalSec ?: 20
+                    val screenOnIndex = screenOnValues.indexOf(currentScreenOn).takeIf { it >= 0 } ?: 1
+                    ChoiceRow(
+                        title = "Screen-on refresh",
+                        options = screenOnLabels,
+                        selectedIndex = screenOnIndex,
+                        onSelect = { viewModel.updateSessionScreenOnInterval(screenOnValues[it]) },
+                        testTag = "session-screen-on"
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val screenOffValues = listOf(1, 3, 5, 10)
+                    val screenOffLabels = listOf("1 min", "3 min", "5 min", "10 min")
+                    val currentScreenOff = prefs?.sessionScreenOffIntervalMin ?: 3
+                    val screenOffIndex = screenOffValues.indexOf(currentScreenOff).takeIf { it >= 0 } ?: 1
+                    ChoiceRow(
+                        title = "Screen-off refresh",
+                        options = screenOffLabels,
+                        selectedIndex = screenOffIndex,
+                        onSelect = { viewModel.updateSessionScreenOffInterval(screenOffValues[it]) },
+                        testTag = "session-screen-off"
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val timeoutValues = listOf(15, 30, 60, 120, null)
+                    val timeoutLabels = listOf("15 min", "30 min", "1 h", "2 h", "Never")
+                    val currentTimeout = if (prefs == null) 60 else prefs!!.sessionTimeoutMin
+                    val timeoutIndex = timeoutValues.indexOf(currentTimeout).takeIf { it >= 0 } ?: 2
+                    ChoiceRow(
+                        title = "Session timeout",
+                        options = timeoutLabels,
+                        selectedIndex = timeoutIndex,
+                        onSelect = { viewModel.updateSessionTimeout(timeoutValues[it]) },
+                        testTag = "session-timeout"
+                    )
+
+                    val warnings = SessionHealth.check(currentTimeout, isIgnoringBattery)
+                    if (warnings.contains(SessionWarning.BATTERY_OPTIMIZED_LONG_SESSION)) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("battery-warning-card"),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF330000))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Long sessions need battery exemption", color = Color.White, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("On Samsung also set Battery → Unrestricted for this app.", color = Color.LightGray, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                            data = Uri.parse("package:$packageName")
+                                        }
+                                        if (intent.resolveActivity(context.packageManager) != null) {
+                                            context.startActivity(intent)
+                                        } else {
+                                            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                                ) {
+                                    Text("Fix", color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(100.dp))
             }
         }
@@ -216,5 +320,38 @@ fun LocationSettingItem(title: String, subtitle: String, icon: ImageVector, colo
             Text(subtitle, color = TextSecondary, fontSize = 14.sp, lineHeight = 18.sp)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(24.dp))
+    }
+}
+
+@Composable
+fun ChoiceRow(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    testTag: String
+) {
+    Column(modifier = Modifier.fillMaxWidth().testTag(testTag)) {
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEachIndexed { index, text ->
+                val selected = index == selectedIndex
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) AccentViolet else SurfaceGlass)
+                        .clickable { onSelect(index) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text, color = Color.White, fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
     }
 }

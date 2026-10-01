@@ -34,14 +34,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.tramapp.domain.junction.GeoPoint
 import com.example.tramapp.ui.theme.*
 import com.example.tramapp.ui.components.*
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.*
-// Assuming StationEntity is available in the project. If not, we might need to import it.
-// import com.example.tramapp.data.StationEntity 
+
+/** One map marker for a junction platform (replaces the old per-station marker list). */
+data class JunctionMapMarker(val id: String, val position: LatLng, val title: String)
 
 @Composable
 fun DashboardScreen(
@@ -49,9 +51,6 @@ fun DashboardScreen(
 ) {
     val currentLocation by viewModel.currentLocation.collectAsState()
     val isManualLocation by viewModel.isManualLocation.collectAsState()
-    val stationDepartures by viewModel.stationDepartures.collectAsState()
-    val loadingStations by viewModel.loadingStations.collectAsState()
-    val status by viewModel.status.collectAsState()
     val currentTime by viewModel.currentTime.collectAsState()
 
     val showTripPopup by viewModel.showTripPopup.collectAsState()
@@ -62,9 +61,8 @@ fun DashboardScreen(
     val appStatus by viewModel.appStatus.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val favoritesFirst by viewModel.favoritesFirst.collectAsState()
-    val visibleStations by viewModel.visibleStations.collectAsState()
-    val visibleStationRows by viewModel.visibleStationRows.collectAsState()
-    val hasMoreStations by viewModel.hasMoreStations.collectAsState()
+    val junctionCards by viewModel.junctionCards.collectAsState()
+    val noStopInRange by viewModel.noStopInRange.collectAsState()
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     val cameraPositionState = rememberCameraPositionState {
@@ -76,24 +74,24 @@ fun DashboardScreen(
         cameraPositionState.position = com.google.android.gms.maps.model.CameraPosition.fromLatLngZoom(currentLocation, 15f)
     }
 
-    val expandedStations = remember { mutableStateMapOf<String, Boolean>() }
-    // R24: sticky — expands the first *settled* (Ready) station exactly once. Never re-fires
-    // on a later refresh/visible-set trickle, so it can't collapse or move a user's choice.
-    var hasAutoExpanded by remember { mutableStateOf(false) }
-    // U11 (R25): map is collapsed to a slim peek by default so it doesn't push the first
-    // Ready station below the fold; user-expandable, independent of station state.
+    // R4/KTD10: nodeId -> expanded. The nearest junction (or a deep-linked pinned one) is
+    // auto-expanded exactly once each; the user's own toggles are never overridden afterwards.
+    val expandedJunctions = remember { mutableStateMapOf<String, Boolean>() }
+    var hasAutoExpandedNearest by remember { mutableStateOf(false) }
     var isMapExpanded by remember { mutableStateOf(true) }
 
-    LaunchedEffect(visibleStationRows) {
-        val currentBaseNames = visibleStationRows.map { it.baseName }.toSet()
-        val keysToRemove = expandedStations.keys.filter { it !in currentBaseNames }
-        keysToRemove.forEach { expandedStations.remove(it) }
+    LaunchedEffect(junctionCards) {
+        val currentNodeIds = junctionCards.map { it.junction.nodeId }.toSet()
+        val keysToRemove = expandedJunctions.keys.filter { it !in currentNodeIds }
+        keysToRemove.forEach { expandedJunctions.remove(it) }
 
-        if (!hasAutoExpanded) {
-            val firstSettled = visibleStationRows.firstOrNull { it.isReady }
-            if (firstSettled != null) {
-                expandedStations[firstSettled.baseName] = true
-                hasAutoExpanded = true
+        val first = junctionCards.firstOrNull()
+        if (first != null) {
+            if (first.isPinned) {
+                expandedJunctions[first.junction.nodeId] = true
+            } else if (!hasAutoExpandedNearest) {
+                expandedJunctions[first.junction.nodeId] = true
+                hasAutoExpandedNearest = true
             }
         }
     }
@@ -113,19 +111,14 @@ fun DashboardScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 20.dp)
         ) {
-            // Header Section — not loading-gated: title/status/settings render
-            // immediately (appStatus already has a sensible default before any refresh
-            // completes; previously this was stuck showing a permanent skeleton because
-            // `isLoading` was a local flag that no code path ever set to false).
             HeaderSection(
                 appStatus = appStatus,
                 now = currentTime,
                 queryCount = apiQueryCount,
-                stationsCount = visibleStationRows.size,
+                stationsCount = junctionCards.size,
                 onSettingsClick = { showSettingsDialog = true }
             )
 
-            // API Throttle Banner
             if (throttleMessage != null) {
                 ErrorBanner(
                     error = ErrorState(
@@ -136,7 +129,7 @@ fun DashboardScreen(
             }
 
             Text(
-                "Nearby Stations",
+                "Nearby Junctions",
                 style = MaterialTheme.typography.headlineSmall.copy(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = (-0.5).sp
@@ -146,106 +139,66 @@ fun DashboardScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Map Component — kept outside the LazyColumn on purpose: a GoogleMap embedded as
-            // a lazy-list item fights the list for vertical drag gestures (the list wins,
-            // panning the map instead scrolls the whole screen). As a fixed sibling above the
-            // scrollable station list, the map gets touch input in its bounds exclusively.
-            if (visibleStations.isEmpty()) {
-                SkeletonRow(width = 300.dp)
-            } else {
-                val filteredStations = visibleStations.filter { stationDepartures.containsKey(it.id) }
-                GoogleMapComponent(
-                    cameraPositionState = cameraPositionState,
-                    onLocationChange = { viewModel.updateLocation(it, isManual = true) },
-                    nearbyStations = filteredStations,
-                    isManualLocation = isManualLocation,
-                    currentLocation = currentLocation,
-                    viewModel = viewModel,
-                    isExpanded = isMapExpanded,
-                    onToggleExpanded = { isMapExpanded = !isMapExpanded }
-                )
+            // Map Component — kept as a fixed sibling above the scrollable list (see U1's
+            // comment history); markers are now junction platforms, not raw stations (KTD10).
+            val markers = remember(junctionCards) {
+                junctionCards.flatMap { card ->
+                    card.junction.platforms.map { platform ->
+                        JunctionMapMarker(
+                            id = platform.stopId,
+                            position = LatLng(platform.position.lat, platform.position.lng),
+                            title = "${card.junction.name} [${platform.letter}]"
+                        )
+                    }
+                }
             }
+            GoogleMapComponent(
+                cameraPositionState = cameraPositionState,
+                onLocationChange = { viewModel.updateLocation(it, isManual = true) },
+                markers = markers,
+                isManualLocation = isManualLocation,
+                currentLocation = currentLocation,
+                viewModel = viewModel,
+                isExpanded = isMapExpanded,
+                onToggleExpanded = { isMapExpanded = !isMapExpanded }
+            )
             Spacer(modifier = Modifier.height(20.dp))
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 contentPadding = PaddingValues(bottom = 100.dp)
             ) {
-                // Stations List — driven off the U4 ordered StationUiState list: Loading
-                // renders a skeleton (never an empty-looking populated card), Empty is
-                // collapsed out entirely (excluded from visibleStationRows), Ready renders
-                // the populated card.
-                if (visibleStationRows.isEmpty()) {
-                    items(5) {
-                        SkeletonRow(width = 300.dp)
+                if (junctionCards.isEmpty()) {
+                    if (noStopInRange) {
+                        item {
+                            Text(
+                                "No tram stop within walking range.",
+                                color = TextSecondary,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(vertical = 24.dp)
+                            )
+                        }
+                    } else {
+                        items(4) {
+                            SkeletonRow(width = 300.dp, modifier = Modifier.testTag("skeleton"))
+                        }
                     }
                 } else {
-                    itemsIndexed(visibleStationRows, key = { _, row -> row.baseName }) { _, row ->
-                        if (row.isLoading) {
-                            StationSkeletonCard(
-                                baseName = row.baseName,
-                                modifier = Modifier.testTag("skeleton")
-                            )
-                        } else {
-                            val isExpanded = expandedStations[row.baseName] ?: false
-                            val isRefetching = row.platformIds.any { loadingStations.contains(it) }
-
-                            StationGroupCard(
-                                baseName = row.baseName,
-                                platformDepartures = row.platformDepartures,
-                                isExpanded = isExpanded,
-                                isLoading = isRefetching,
-                                favorites = favorites,
-                                now = currentTime,
-                                onExpandToggle = {
-                                    expandedStations[row.baseName] = !isExpanded
-                                    if (!isExpanded) {
-                                        viewModel.refreshStationGroup(row.platformIds)
-                                    }
-                                },
-                                onFavoriteClick = { line ->
-                                    viewModel.toggleFavorite(line)
-                                },
-                                onTramClick = { tripId, routeName, destination ->
-                                    viewModel.selectTram(tripId, routeName, destination)
-                                },
-                                modifier = Modifier.testTag("station-card")
-                            )
-                        }
-                    }
-
-                    if (hasMoreStations) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(AccentViolet.copy(alpha = 0.15f))
-                                    .border(1.dp, AccentViolet, RoundedCornerShape(16.dp))
-                                    .clickable { viewModel.loadMoreStations() },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        tint = AccentViolet,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Text(
-                                        "Load 3 more stations",
-                                        color = AccentViolet,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
+                    itemsIndexed(junctionCards, key = { _, card -> card.junction.nodeId }) { _, card ->
+                        val isExpanded = expandedJunctions[card.junction.nodeId] ?: false
+                        JunctionCard(
+                            junction = card.junction,
+                            snapshot = card.snapshot,
+                            userLocation = GeoPoint(currentLocation.latitude, currentLocation.longitude),
+                            isExpanded = isExpanded,
+                            favorites = favorites,
+                            now = currentTime,
+                            onExpandToggle = { expandedJunctions[card.junction.nodeId] = !isExpanded },
+                            onFavoriteClick = { line -> viewModel.toggleFavorite(line) },
+                            onTramClick = { tripId, routeName, destination ->
+                                viewModel.selectTram(tripId, routeName, destination)
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -286,16 +239,13 @@ fun HeaderSection(
     ) {
         Column {
             Text("Find your tram", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-            // U10 (R10, R11, R22): a real freshness/connection cue replaces the always-visible
-            // "Debug: N API calls" string. The debug counter is kept, but gated behind
-            // BuildConfig.DEBUG (owner opted keep-but-gate, not delete).
             com.example.tramapp.ui.components.CompactStatusIndicator(
                 status = appStatus,
                 now = now.toInstant().toEpochMilli()
             )
             if (com.example.tramapp.BuildConfig.DEBUG) {
                 Text(
-                    "Debug: $queryCount API calls, $stationsCount stations found",
+                    "Debug: $queryCount API calls, $stationsCount junctions shown",
                     color = AccentCyan.copy(alpha = 0.4f),
                     fontSize = 10.sp
                 )
@@ -309,7 +259,6 @@ fun HeaderSection(
                 .clickable { onSettingsClick() },
             contentAlignment = Alignment.Center
         ) {
-            // U10 (R23): gear icon replaces the star, since this opens Settings, not favorites.
             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
         }
     }
@@ -319,7 +268,7 @@ fun HeaderSection(
 fun GoogleMapComponent(
     cameraPositionState: CameraPositionState,
     onLocationChange: (LatLng) -> Unit,
-    nearbyStations: List<com.example.tramapp.data.local.entity.StationEntity>, // Use real entity type
+    markers: List<JunctionMapMarker>,
     isManualLocation: Boolean,
     currentLocation: LatLng,
     viewModel: DashboardViewModel,
@@ -368,10 +317,6 @@ fun GoogleMapComponent(
                 )
             }
 
-            // Always visible regardless of collapsed/expanded state — previously these lived
-            // inside the expanded-only map overlay and vanished once the map defaulted to
-            // collapsed (U11), which was a real regression: users lost quick access to
-            // "use my location" / "refresh now".
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FloatingActionButton(
                     onClick = {
@@ -416,16 +361,15 @@ fun GoogleMapComponent(
                 properties = MapProperties(
                     mapType = MapType.NORMAL,
                     isMyLocationEnabled = hasLocationPermission,
-                    // U11 (R26): shared dark style — no bright tan rectangle.
                     mapStyleOptions = MapStyleOptions(
                         com.example.tramapp.ui.components.MapStyleConfig.DARK_MAP_STYLE_JSON
                     )
                 )
             ) {
-                nearbyStations.forEach { station ->
+                markers.forEach { marker ->
                     Marker(
-                        state = MarkerState(position = LatLng(station.latitude, station.longitude)),
-                        title = station.name
+                        state = MarkerState(position = marker.position),
+                        title = marker.title
                     )
                 }
             }

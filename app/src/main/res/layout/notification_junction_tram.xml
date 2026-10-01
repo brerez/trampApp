@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One tram chip: line-number badge + time/delay/cancelled text. Instantiated per tram via
+     RemoteViews(pkg, R.layout.notification_junction_tram) and addView'd into a row's
+     trams_container (LineColors picks the badge background per line, U78 part 2). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tram_chip"
+    android:orientation="horizontal"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:layout_marginEnd="8dp">
+
+    <TextView
+        android:id="@+id/tv_line"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="22dp"
+        android:gravity="center"
+        android:paddingStart="5dp"
+        android:paddingEnd="5dp"
+        android:paddingTop="1dp"
+        android:paddingBottom="1dp"
+        android:textStyle="bold"
+        android:textColor="@color/notification_badge_text"
+        android:textAppearance="@style/TextAppearance.Compat.Notification"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/tv_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:layout_marginStart="4dp"
+        android:textAppearance="@style/TextAppearance.Compat.Notification"
+        android:textSize="13sp" />
+
+</LinearLayout>

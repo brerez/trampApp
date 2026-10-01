@@ -22,13 +22,13 @@ interface GolemioService {
         @Query("ids[]") ids: List<String>
     ): GolemioResponse<StopProperties>
 
+    // U3: one batched call for all platforms of a junction (node).
     @GET("pid/departureboards")
-    suspend fun getDepartures(
-        @Query("ids") stopId: String,
-        @Query("limit") limit: Int = 10,
+    suspend fun getDepartureBoards(
+        @Query("ids[]") ids: List<String>,
+        @Query("limit") limit: Int = 200,
         @Query("minutesBefore") minutesBefore: Int = 0,
         @Query("minutesAfter") minutesAfter: Int = 60,
-        // U8/U2 (R7, R8): gates whether the API populates trip.is_air_conditioned.
         @Query("airCondition") airCondition: Boolean = true
     ): DepartureResponse
 

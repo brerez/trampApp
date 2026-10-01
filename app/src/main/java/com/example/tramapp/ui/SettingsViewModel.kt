@@ -38,4 +38,22 @@ class SettingsViewModel @Inject constructor(
             preferencesManager.updateMaxStations(count)
         }
     }
+
+    fun updateSessionScreenOnInterval(sec: Int) {
+        viewModelScope.launch {
+            preferencesManager.setSessionScreenOnIntervalSec(sec)
+        }
+    }
+
+    fun updateSessionScreenOffInterval(min: Int) {
+        viewModelScope.launch {
+            preferencesManager.setSessionScreenOffIntervalMin(min)
+        }
+    }
+
+    fun updateSessionTimeout(min: Int?) {
+        viewModelScope.launch {
+            preferencesManager.setSessionTimeoutMin(min)
+        }
+    }
 }

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One ContentLine (platform + next stop + up to 3 trams). Instantiated per row via
+     RemoteViews(pkg, R.layout.notification_junction_row) and addView'd into a
+     collapsed/expanded layout's rows_container. tv_prefix carries everything up to and including
+     the next-stop label as a styled Spannable; trams_container gets one notification_junction_tram
+     child per tram (U78 part 2).
+     Two lines, not one: sharing a line with three chips left the header ("Platform B · 90 m →
+     next: …") ellipsized to "B…" at larger font scales, which hid what each row meant. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/row_root"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="3dp"
+    android:paddingBottom="3dp">
+
+    <TextView
+        android:id="@+id/tv_prefix"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textAppearance="@style/TextAppearance.Compat.Notification" />
+
+    <LinearLayout
+        android:id="@+id/trams_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical" />
+
+</LinearLayout>

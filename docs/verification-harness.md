@@ -70,3 +70,9 @@ target them without depending on visible text/copy:
 From a clean checkout with the emulator already booted, `./gradlew :app:testDebugUnitTest --rerun-tasks`
 then `./gradlew :app:connectedDebugAndroidTest` should reproduce a green run of both suites
 using only the steps above.
+
+## API 36 / edge-to-edge promotion target
+
+The app now targets API 36 (`compileSdk = 36`, `targetSdk = 36`).
+AVD `Samsung_Galaxy_S22` uses `system-images/android-36/google_apis/x86_64` (already API 36),
+so it is the reference AVD for both API 36 promotion checks and edge-to-edge visual verification.

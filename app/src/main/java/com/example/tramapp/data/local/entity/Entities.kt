@@ -12,7 +12,10 @@ data class StationEntity(
     val direction: String? = null,
     val isFavorite: Boolean = false,
     val lastUpdate: Long = 0,
-    val isTram: Boolean? = null
+    val isTram: Boolean? = null,
+    // U3: junction (PID stop node) id — the stop id prefix before the first 'Z' — and platform code.
+    val nodeId: String? = null,
+    val platformCode: String? = null
 )
 
 @Entity(tableName = "schedules")
@@ -23,10 +26,4 @@ data class ScheduleEntity(
     val destination: String,
     val expectedDepartureTime: Long, // timestamp
     val isRealTime: Boolean
-)
-@Entity(tableName = "trip_routes")
-data class TripRouteEntity(
-    @PrimaryKey val routeKey: String, // e.g. "8-Starý Hloubětín"
-    val stopIds: String, // Comma-separated stop names or IDs
-    val timestamp: Long
 )

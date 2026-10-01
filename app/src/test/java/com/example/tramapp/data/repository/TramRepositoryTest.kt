@@ -25,15 +25,6 @@ class TramRepositoryTest {
     lateinit var stationDao: StationDao
 
     @Mock
-    lateinit var departureDao: com.example.tramapp.data.local.dao.DepartureDao
-
-    @Mock
-    lateinit var tripRouteDao: com.example.tramapp.data.local.dao.TripRouteDao
-
-    @Mock
-    lateinit var lineDirectionDao: com.example.tramapp.data.local.dao.LineDirectionDao
-
-    @Mock
     lateinit var throttleUtil: com.example.tramapp.utils.ThrottleUtil
 
     lateinit var repository: TramRepository
@@ -41,7 +32,7 @@ class TramRepositoryTest {
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
-        repository = TramRepository(apiService, stationDao, departureDao, tripRouteDao, lineDirectionDao, throttleUtil)
+        repository = TramRepository(apiService, stationDao, throttleUtil)
     }
 
     @Test
@@ -142,26 +133,5 @@ class TramRepositoryTest {
 
         assertEquals(1, ids.size)
         assertEquals("U_DL_1", ids[0])
-    }
-
-    @Test
-    fun `getDepartures should mark station as non-tram if it has departures but no trams`() = runTest {
-        val stopId = "U123"
-        val mockResponse = com.example.tramapp.data.remote.DepartureResponse(
-            departures = listOf(
-                com.example.tramapp.data.remote.DepartureItem(
-                    route = com.example.tramapp.data.remote.RouteInfo("100", 3), // 3 = Bus
-                    trip = com.example.tramapp.data.remote.TripInfo("Dest"),
-                    arrival = com.example.tramapp.data.remote.TimestampInfo("2026-05-08T23:00:00Z", null),
-                    stop = com.example.tramapp.data.remote.StopInfo(stopId)
-                )
-            )
-        )
-        whenever(apiService.getDepartures(stopId)).thenReturn(mockResponse)
-        
-        repository.getDepartures(stopId)
-        
-        // We expect it to update isTram to false!
-        verify(stationDao).updateIsTramStatus(stopId, false)
     }
 }

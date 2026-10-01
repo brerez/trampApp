@@ -5,8 +5,7 @@ import androidx.room.Room
 import com.example.tramapp.data.local.TramDatabase
 import com.example.tramapp.data.local.dao.ScheduleDao
 import com.example.tramapp.data.local.dao.StationDao
-import com.example.tramapp.data.local.dao.TripRouteDao
-import com.example.tramapp.data.local.dao.LineDirectionDao
+import com.example.tramapp.data.local.dao.TripNextStopDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -39,17 +38,7 @@ object DatabaseModule {
     }
 
     @Provides
-    fun provideDepartureDao(database: TramDatabase): com.example.tramapp.data.local.dao.DepartureDao {
-        return database.departureDao()
-    }
-
-    @Provides
-    fun provideTripRouteDao(database: TramDatabase): TripRouteDao {
-        return database.tripRouteDao()
-    }
-
-    @Provides
-    fun provideLineDirectionDao(database: TramDatabase): LineDirectionDao {
-        return database.lineDirectionDao()
+    fun provideTripNextStopDao(database: TramDatabase): TripNextStopDao {
+        return database.tripNextStopDao()
     }
 }

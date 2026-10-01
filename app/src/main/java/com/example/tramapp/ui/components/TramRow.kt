@@ -27,11 +27,15 @@ import java.time.OffsetDateTime
 
 @Composable
 fun TramRow(
-    smartDeparture: com.example.tramapp.domain.SmartDeparture, 
+    smartDeparture: com.example.tramapp.domain.SmartDeparture,
     isFavorite: Boolean,
     now: OffsetDateTime,
     onFavoriteClick: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    // U10 (R11, KTD10): junction rows carry cancellation/minutes directly from the
+    // TramDeparture model instead of re-deriving them from arrival.predicted/scheduled.
+    isCancelled: Boolean = false,
+    minutesOverride: Int? = null
 ) {
     val tram = smartDeparture.item
     val isHomeBound = smartDeparture.isHomeBound
@@ -51,13 +55,20 @@ fun TramRow(
         else -> null
     }
 
-    val arrivalTime = try {
-        OffsetDateTime.parse(tram.arrival.predicted ?: tram.arrival.scheduled)
-    } catch (e: Exception) {
-        now
+    val timeText = when {
+        isCancelled -> "Cancelled"
+        // Minutes already reflect the predicted arrival, so no separate delay suffix.
+        minutesOverride != null -> if (minutesOverride <= 0) "now" else "$minutesOverride min"
+        else -> {
+            val arrivalTime = try {
+                OffsetDateTime.parse(tram.arrival.predicted ?: tram.arrival.scheduled)
+            } catch (e: Exception) {
+                now
+            }
+            val diffMinutes = Duration.between(now, arrivalTime).toMinutes()
+            if (diffMinutes <= 0) "now" else "${diffMinutes} min"
+        }
     }
-    val diffMinutes = Duration.between(now, arrivalTime).toMinutes()
-    val timeText = if (diffMinutes <= 0) "now" else "${diffMinutes} min"
 
     Row(
         modifier = Modifier
@@ -76,7 +87,8 @@ fun TramRow(
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isHighlighted) accentColor else accentColor.copy(alpha = 0.2f))
-                    .border(1.dp, if (isHighlighted) Color.Transparent else accentColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                    .border(1.dp, if (isHighlighted) Color.Transparent else accentColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .clickable { onFavoriteClick() },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -85,6 +97,19 @@ fun TramRow(
                     fontWeight = FontWeight.Black,
                     fontSize = 16.sp
                 )
+                // U10 (KTD10): the favourite star lives on the line badge only — it no longer
+                // reorders rows, so a separate standalone star affordance is misleading.
+                if (isFavorite) {
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.Star,
+                        contentDescription = "Favorite",
+                        tint = Color.Yellow,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(14.dp)
+                            .testTag("favorite-star")
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f, fill = false)) {
@@ -103,14 +128,6 @@ fun TramRow(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.Icon(
-                imageVector = androidx.compose.material.icons.Icons.Filled.Star,
-                contentDescription = "Favorite",
-                tint = if (isFavorite) Color.Yellow else Color.White.copy(alpha = 0.3f),
-                modifier = Modifier
-                    .clickable { onFavoriteClick() }
-                    .padding(8.dp)
-            )
             // U9 (R9, R21): small, monochrome amenity glyphs — never a relevance color —
             // rendered only when the flag is known (non-null), left of the countdown.
             if (smartDeparture.isAccessible == true) {
@@ -139,11 +156,16 @@ fun TramRow(
             // R19: countdown is the primary cue — fontSize/weight never shrink for glyphs.
             Text(
                 timeText,
-                color = if (isHighlighted) accentColor else Color.White,
+                color = when {
+                    isCancelled -> Color.Red.copy(alpha = 0.8f)
+                    isHighlighted -> accentColor
+                    else -> Color.White
+                },
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 16.sp,
                 maxLines = 1,
-                softWrap = false
+                softWrap = false,
+                modifier = Modifier.testTag("tram-time")
             )
         }
     }

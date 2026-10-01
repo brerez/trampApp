@@ -41,7 +41,10 @@ data class UserPreferences(
     val workLinesTimestamp: Long,
     val schoolLinesTimestamp: Long,
     val favorites: Set<String>,
-    val favoritesFirst: Boolean
+    val favoritesFirst: Boolean,
+    val sessionScreenOnIntervalSec: Int = 20,
+    val sessionScreenOffIntervalMin: Int = 3,
+    val sessionTimeoutMin: Int? = 60
 )
 
 @Singleton
@@ -79,6 +82,9 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
         private val SCHOOL_LINES_TS = longPreferencesKey("school_lines_ts")
         private val FAVORITES = stringPreferencesKey("favorites")
         private val FAVORITES_FIRST = booleanPreferencesKey("favorites_first")
+        private val SESSION_SCREEN_ON = intPreferencesKey("session_screen_on")
+        private val SESSION_SCREEN_OFF = intPreferencesKey("session_screen_off")
+        private val SESSION_TIMEOUT = intPreferencesKey("session_timeout")
 
         private const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000 // 7 days
     }
@@ -112,7 +118,10 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
             workLinesTimestamp = preferences[WORK_LINES_TS] ?: 0L,
             schoolLinesTimestamp = preferences[SCHOOL_LINES_TS] ?: 0L,
             favorites = preferences[FAVORITES]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
-            favoritesFirst = preferences[FAVORITES_FIRST] ?: false
+            favoritesFirst = preferences[FAVORITES_FIRST] ?: false,
+            sessionScreenOnIntervalSec = preferences[SESSION_SCREEN_ON] ?: 20,
+            sessionScreenOffIntervalMin = preferences[SESSION_SCREEN_OFF] ?: 3,
+            sessionTimeoutMin = decodeSessionTimeout(preferences[SESSION_TIMEOUT])
         )
     }
 
@@ -205,4 +214,36 @@ class UserPreferencesManager @Inject constructor(@ApplicationContext private val
     suspend fun updateFavoritesFirst(enabled: Boolean) {
         dataStore.edit { it[FAVORITES_FIRST] = enabled }
     }
+
+    suspend fun setSessionScreenOnIntervalSec(value: Int) {
+        dataStore.edit { it[SESSION_SCREEN_ON] = value }
+    }
+
+    suspend fun setSessionScreenOffIntervalMin(value: Int) {
+        dataStore.edit { it[SESSION_SCREEN_OFF] = value }
+    }
+
+    suspend fun setSessionTimeoutMin(value: Int?) {
+        dataStore.edit { it[SESSION_TIMEOUT] = encodeSessionTimeout(value) }
+    }
+}
+
+private const val SESSION_TIMEOUT_NEVER = -1
+private const val SESSION_TIMEOUT_DEFAULT_MIN = 60
+
+/** Unset -> default 60 min; the NEVER sentinel -> null ("Never"). */
+internal fun decodeSessionTimeout(raw: Int?): Int? = when (raw) {
+    null -> SESSION_TIMEOUT_DEFAULT_MIN
+    SESSION_TIMEOUT_NEVER -> null
+    else -> raw
+}
+
+internal fun encodeSessionTimeout(minutes: Int?): Int = minutes ?: SESSION_TIMEOUT_NEVER
+
+fun UserPreferences.toSessionSettings(): com.example.tramapp.glance.SessionSettings {
+    return com.example.tramapp.glance.SessionSettings(
+        screenOnIntervalMs = this.sessionScreenOnIntervalSec * 1000L,
+        screenOffIntervalMs = this.sessionScreenOffIntervalMin * 60_000L,
+        timeoutMs = this.sessionTimeoutMin?.times(60_000L)
+    )
 }
